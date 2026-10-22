@@ -1,6 +1,3 @@
--- NexLuaRBX | NeXLua Hub | Merge Vs Mobs | V24 RC1
--- Distribucion codificada. El codigo de cliente nunca puede protegerse al 100%.
--- Fuente original mantenida por el autor fuera de este repositorio.
 
 local payload = [[
 dnYAAFF7e3t7FT4DFy46exMuOXsNaW97GDQ2Kzo4L3t2exY+KTw+ew0oexY0OShRe3t7exg0Nis6OC97My45YXs4NDI1ezg0Nzc+OC8yNDV3ez
