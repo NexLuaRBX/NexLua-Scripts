@@ -1,4 +1,4 @@
--- NeXLua Hub | Auto Stop V16 | DYNAMIC ARGUMENT DIAGNOSTIC
+-- NeXLua Hub | Auto Stop V17 | NESTED FIELD COMPARISON
 -- MOBILE DIAGNOSTIC ONLY. No automatic click, touch simulation, or remote replay.
 -- V9 desktop timing and your existing Auto Stop script are NOT modified.
 -- Start a new Roblox session to remove hooks from older diagnostic versions.
@@ -11,8 +11,8 @@ local LP = Players.LocalPlayer
 local env = (type(getgenv) == "function" and getgenv()) or _G
 local pg = LP:WaitForChild("PlayerGui")
 
-if type(env.NeXLuaArgDiffStop) == "function" then pcall(env.NeXLuaArgDiffStop) end
-local previous = pg:FindFirstChild("NeXLua_ArgDiff_V16")
+if type(env.NeXLuaNestedDiffStop) == "function" then pcall(env.NeXLuaNestedDiffStop) end
+local previous = pg:FindFirstChild("NeXLua_NestedDiff_V17")
 if previous then previous:Destroy() end
 
 local S = {alive=true, armed=false, busy=false, captures={}, recent={}, connections={}, hookInstalled=false, current=nil, watchedPart=nil, began=0, run=0}
@@ -29,14 +29,14 @@ local function round(obj,r)
     c.Parent=obj
 end
 local gui = Instance.new("ScreenGui")
-gui.Name="NeXLua_ArgDiff_V16"
+gui.Name="NeXLua_NestedDiff_V17"
 gui.ResetOnSpawn=false
 -- Do not mark IgnoreGuiInset=true on mobile: touch positions are aligned with the game.
 gui.DisplayOrder=4000
 gui.Parent=pg
 local panel=Instance.new("Frame")
-panel.Size=UDim2.fromOffset(332,301)
-panel.Position=UDim2.new(1,-343,0.22,0)
+panel.Size=UDim2.fromOffset(346,346)
+panel.Position=UDim2.new(1,-355,0.18,0)
 panel.BackgroundColor3=color(10,20,15)
 panel.BorderSizePixel=0
 panel.Active=true
@@ -61,7 +61,7 @@ local function text(value,y,h,size,c)
     t.Parent=panel
     return t
 end
-text("NeXLua Hub | ARGUMENT CHECK",7,23,14,color(52,231,113))
+text("NeXLua Hub | FIELD CHECK",7,23,14,color(52,231,113))
 text("YouTube: @NexLuaRBX",30,19,10,color(162,201,176))
 local btn=Instance.new("TextButton")
 btn.Size=UDim2.new(1,-22,0,40)
@@ -77,9 +77,11 @@ local st1=text("Ready: sit at your table first.",101,34,11)
 local st2=text("Tap 1: --",137,22,10,color(161,201,173))
 local st3=text("Tap 2: --",159,22,10,color(161,201,173))
 local st4=text("No input will be simulated.",184,25,10,color(95,233,137))
-local st5=text("Changed data type: --",211,24,10,color(177,229,190))
-local st6=text("Differences: --",236,26,10,color(177,229,190))
-local st7=text("Value/bytes: --",264,30,10,color(177,229,190))
+local st5=text("ARG1 type: --",211,22,10,color(177,229,190))
+local st6=text("Changed fields: --",235,32,10,color(177,229,190))
+local st7=text("Field 1: --",269,22,10,color(177,229,190))
+local st8=text("Field 2: --",293,22,10,color(177,229,190))
+local st9=text("Time comparison: --",317,22,10,color(177,229,190))
 
 local function ownButton()
     local character=LP.Character
@@ -178,75 +180,114 @@ end
 local function snapshotFirst(v)
     local kind=typeof(v)
     local result={kind=kind}
-    if kind=="buffer" then
-        local ok,n=pcall(buffer.len,v)
-        if not ok then result.note="BUFFER READ FAILED";return result end
-        result.n=n
-        local data={}
-        local cap=math.min(n,4096)
-        for i=0,cap-1 do
-            local readOK,b=pcall(buffer.readu8,v,i)
-            if not readOK then break end
-            data[#data+1]=b
+    if kind=="table" then
+        -- Copy primitive leaves now, since mutable Roblox tables could change later.
+        -- Never display raw strings, remote tokens or session identifiers.
+        local leaves,seen={},{}
+        local total=0
+        local function walk(item,path,depth)
+            if total>=96 then return end
+            local itemType=typeof(item)
+            if itemType=="table" then
+                if seen[item] then return end
+                seen[item]=true
+                if depth>=5 then
+                    leaves[path..".(depth-limit)"]={kind="table",value="limit"}
+                    return
+                end
+                local count=0
+                for k,x in pairs(item) do
+                    if count>=32 or total>=96 then break end
+                    local ktype=typeof(k)
+                    if ktype=="string" or ktype=="number" then
+                        local key=tostring(k):sub(1,24)
+                        count=count+1
+                        walk(x,(path=="" and key or (path.."."..key)),depth+1)
+                    end
+                end
+            else
+                total=total+1
+                if itemType=="number" then
+                    leaves[path]={kind="number",value=item}
+                elseif itemType=="boolean" then
+                    leaves[path]={kind="boolean",value=item}
+                elseif itemType=="string" then
+                    leaves[path]={kind="string",value=#item,hash=hashValue(item:sub(1,512))}
+                elseif itemType=="buffer" then
+                    local ok,n=pcall(buffer.len,item)
+                    leaves[path]={kind="buffer",value=ok and n or -1}
+                else
+                    leaves[path]={kind=itemType,value="omitted"}
+                end
+            end
         end
-        result.bytes=data
-        result.truncated=n>cap
-    elseif kind=="string" then
-        result.n=#v
-        local data={}
-        for i=1,math.min(#v,4096) do data[#data+1]=v:byte(i) end
-        result.bytes=data
-        result.truncated=#v>4096
+        walk(v,"",0)
+        result.leaves=leaves
+        result.count=total
+    elseif kind=="buffer" or kind=="string" then
+        local ok,s=pcall(signature,v,0)
+        result.value=ok and s or kind
     elseif kind=="number" or kind=="boolean" or kind=="nil" then
         result.value=v
-    elseif kind=="Instance" then
-        local ok,p=pcall(function()return v:GetFullName()end)
-        result.value=ok and p or tostring(v)
     else
-        -- Tables are represented only by the structural fingerprint.
-        -- Never serialise arbitrary userdata or session objects into UI strings.
-        local ok,sign=pcall(signature,v,0)
-        result.value=ok and sign or kind
+        result.value=kind
     end
     return result
 end
-local function describeArg(a,b)
-    if not a or not b then return "ARG1: not captured","DIFF: unavailable","VALUES: unavailable" end
+
+local function describeArg(a,b,elapsed)
+    if not a or not b then
+        return "ARG1: not captured","FIELDS: --","FIELD 1: --","FIELD 2: --","TIME: --"
+    end
     if a.kind~=b.kind then
-        return "ARG1 TYPES: "..a.kind.." / "..b.kind,"DIFF: type changed","VALUES: see current args"
+        return "ARG1: "..a.kind.." / "..b.kind,"FIELD TYPES CHANGED","--","--","--"
     end
-    local kind=a.kind
-    if kind=="buffer" or kind=="string" then
-        local n1,n2=a.n or 0,b.n or 0
-        local d1,d2=a.bytes or {},b.bytes or {}
-        local limit=math.min(#d1,#d2)
-        local changed,examples={},{}
-        local num=0
-        for i=1,limit do
-            if d1[i]~=d2[i] then
-                num=num+1
-                if #changed<8 then changed[#changed+1]=tostring(i) end
-                if #examples<4 then examples[#examples+1]=string.format("%d:%02X>%02X",i,d1[i],d2[i]) end
+    if a.kind~="table" then
+        return "ARG1: "..a.kind,"PAYLOAD: "..tostring(a.value).." -> "..tostring(b.value),"--","--","--"
+    end
+    local left,right=a.leaves or {},b.leaves or {}
+    local changed,fields,nearTime={}, {},{}
+    local visited={}
+    for path,x in pairs(left) do
+        visited[path]=true
+        local y=right[path]
+        if y==nil or x.kind~=y.kind or x.value~=y.value or x.hash~=y.hash then
+            changed[#changed+1]=path
+            local desc
+            if y and x.kind=="number" and y.kind=="number" then
+                local delta=y.value-x.value
+                desc=path..": delta "..string.format("%.5g",delta)
+                if elapsed and math.abs(delta-elapsed)<0.75 then
+                    nearTime[#nearTime+1]=path
+                end
+            else
+                desc=path..": "..x.kind.." changed"
             end
+            fields[#fields+1]=desc
         end
-        if n1~=n2 then num=num+math.abs(n1-n2) end
-        local suffix=(a.truncated or b.truncated) and " (first 4KB only)" or ""
-        return string.upper(kind).." | bytes "..n1.." / "..n2,
-            "CHANGED: "..num.." | POS: "..(#changed>0 and table.concat(changed,",") or "none")..suffix,
-            "HEX CHANGES: "..(#examples>0 and table.concat(examples,"  ") or "none")
     end
-    local function describe(v)
-        if v==nil then return "nil" end
-        local s=tostring(v)
-        return #s>68 and s:sub(1,65).."..." or s
+    for path,y in pairs(right) do
+        if not visited[path] then
+            changed[#changed+1]=path
+            fields[#fields+1]=path..": added"
+        end
     end
-    local v1,v2=describe(a.value),describe(b.value)
-    local caption=string.upper(kind).." (argument 1)"
-    if kind=="number" then
-        local delta=(b.value or 0)-(a.value or 0)
-        return caption,"NUMBER DELTA: "..string.format("%.6g",delta),"VALUES: "..v1.." -> "..v2
+    table.sort(changed)
+    table.sort(fields)
+    local function limit(s,n)
+        if #s>n then return s:sub(1,n-3).."..." end
+        return s
     end
-    return caption,"ARG1 SIGNATURE "..(v1==v2 and "SAME" or "CHANGED"),"VALUES: "..v1.." -> "..v2
+    local changedName=#changed==0 and "none" or table.concat(changed,", ")
+    local elapsedMessage="TIME GAP: "..(elapsed and string.format("%.2fs",elapsed) or "n/a")
+    if #nearTime>0 then
+        elapsedMessage=elapsedMessage.." | Matches "..table.concat(nearTime,",")
+    end
+    return "ARG1: TABLE ("..tostring(a.count or 0).." / "..tostring(b.count or 0).." leaves)",
+        "CHANGED ("..#changed.."): "..limit(changedName,92),
+        limit(fields[1] or "FIELD 1: unchanged",95),
+        limit(fields[2] or "FIELD 2: unchanged",95),
+        limit(elapsedMessage,95)
 end
 
 local function captureArgs(...)
@@ -347,9 +388,11 @@ track(btn.Activated,function()
     st2.Text="Tap 1: --"
     st3.Text="Tap 2: --"
     st4.Text="Use the real red button in two rounds."
-    st5.Text="Changed data type: --"
-    st6.Text="Differences: --"
-    st7.Text="Value/bytes: --"
+    st5.Text="ARG1 type: --"
+    st6.Text="Changed fields: --"
+    st7.Text="Field 1: --"
+    st8.Text="Field 2: --"
+    st9.Text="Time comparison: --"
     btn.Text="WATCHING..."
     task.delay(180,function()
         if S.alive and S.armed and S.run==watchId then
@@ -392,11 +435,14 @@ track(UIS.InputBegan,function(input)
             st4.Text=compare(S.captures[1],S.captures[2])
             local a,b=S.captures[1],S.captures[2]
             if a and b and a.remote==b.remote and a.method==b.method then
-                st5.Text,st6.Text,st7.Text=describeArg(a.first,b.first)
+                st5.Text,st6.Text,st7.Text,st8.Text,st9.Text=
+                    describeArg(a.first,b.first,b.at-a.at)
             else
                 st5.Text="Argument types unavailable"
                 st6.Text="Did not capture same action twice"
                 st7.Text="Run test again if needed"
+                st8.Text="--"
+                st9.Text="--"
             end
             S.armed=false
             btn.Text="WATCH TWO REAL TAPS"
@@ -423,10 +469,10 @@ track(UIS.InputEnded,function(input)
     if input==dragRef then dragging,dragRef=false,nil end
 end)
 
-env.NeXLuaArgDiffStop=function()
+env.NeXLuaNestedDiffStop=function()
     S.alive=false
     S.armed=false
     for _,conn in ipairs(S.connections) do pcall(function() conn:Disconnect() end) end
     pcall(function() gui:Destroy() end)
 end
-print("[NeXLua V16] Argument difference diagnostic loaded; no clicks or remote replay.")
+print("[NeXLua V17] Nested field comparison loaded. No clicks or remote replay.")
