@@ -1,288 +1,337 @@
--- NeXLua Hub | Auto Stop V14 | Real Mobile Tap Probe
--- Diagnostic only. Does not click, invoke remotes, or alter the V9 timer.
--- Run in a FRESH GAME SESSION without V10-V13 active.
-local Players = game:GetService('Players')
-local UIS = game:GetService('UserInputService')
-local GuiService = game:GetService('GuiService')
-local WS = game:GetService('Workspace')
-local LP = Players.LocalPlayer
-local env = (type(getgenv) == 'function' and getgenv()) or _G
-local spy = env.NeXLuaStopTapProbe or {}
-env.NeXLuaStopTapProbe = spy
-if type(spy.Stop) == 'function' then pcall(spy.Stop) end
-spy.active = false
-spy.capture = nil
-spy.before = nil
-spy.installed = spy.installed or false
-spy.connections = {}
-spy.watchConns = {}
+-- NeXLua Hub | Auto Stop V15 | TWO REAL TAPS COMPARISON
+-- MOBILE DIAGNOSTIC ONLY. No automatic click, touch simulation, or remote replay.
+-- V9 desktop timing and your existing Auto Stop script are NOT modified.
+-- Start a new Roblox session to remove hooks from older diagnostic versions.
 
-local function track(signal, fn)
-    local c = signal:Connect(fn)
-    table.insert(spy.connections, c)
-    return c
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+local WS = game:GetService("Workspace")
+local LP = Players.LocalPlayer
+local env = (type(getgenv) == "function" and getgenv()) or _G
+local pg = LP:WaitForChild("PlayerGui")
+
+if type(env.NeXLuaTapCompareStop) == "function" then pcall(env.NeXLuaTapCompareStop) end
+local previous = pg:FindFirstChild("NeXLua_TwoTap_Compare_V15")
+if previous then previous:Destroy() end
+
+local S = {alive=true, armed=false, busy=false, captures={}, recent={}, connections={}, hookInstalled=false, current=nil, watchedPart=nil, began=0, run=0}
+local function track(signal, callback)
+    local conn = signal:Connect(callback)
+    table.insert(S.connections, conn)
+    return conn
 end
-local function trackWatch(signal, fn)
-    local c = signal:Connect(fn)
-    table.insert(spy.watchConns,c)
-    return c
+
+local function color(r,g,b) return Color3.fromRGB(r,g,b) end
+local function round(obj,r)
+    local c=Instance.new("UICorner")
+    c.CornerRadius=UDim.new(0,r)
+    c.Parent=obj
 end
-local function clearWatch()
-    for _,c in ipairs(spy.watchConns) do pcall(function() c:Disconnect() end) end
-    spy.watchConns = {}
-end
-local function C(r,g,b) return Color3.fromRGB(r,g,b) end
-local function corner(obj, r)
-    local v = Instance.new('UICorner')
-    v.CornerRadius = UDim.new(0,r)
-    v.Parent = obj
-end
-local pg = LP:WaitForChild('PlayerGui')
-local oldGui = pg:FindFirstChild('NeXLua_TapProbe_V14')
-if oldGui then oldGui:Destroy() end
-local gui = Instance.new('ScreenGui')
-gui.Name = 'NeXLua_TapProbe_V14'
-gui.ResetOnSpawn = false
-gui.DisplayOrder = 4000
-gui.IgnoreGuiInset = false
-gui.Parent = pg
-local frame = Instance.new('Frame')
-frame.Size = UDim2.fromOffset(292,183)
-frame.Position = UDim2.new(1,-300,0.34,0)
-frame.BackgroundColor3 = C(12,20,16)
-frame.BorderSizePixel = 0
-frame.Active = true
-frame.Parent = gui
-corner(frame,10)
-local border = Instance.new('UIStroke')
-border.Color = C(40,210,98)
-border.Thickness = 1
-border.Parent = frame
-local function text(value,y,height,size,color)
-    local t = Instance.new('TextLabel')
-    t.BackgroundTransparency = 1
-    t.Position = UDim2.fromOffset(10,y)
-    t.Size = UDim2.new(1,-20,0,height)
-    t.Font = Enum.Font.GothamBold
-    t.TextSize = size or 12
-    t.TextColor3 = color or C(235,250,239)
-    t.TextXAlignment = Enum.TextXAlignment.Left
-    t.TextWrapped = true
-    t.Text = value
-    t.Parent = frame
+local gui = Instance.new("ScreenGui")
+gui.Name="NeXLua_TwoTap_Compare_V15"
+gui.ResetOnSpawn=false
+-- Do not mark IgnoreGuiInset=true on mobile: touch positions are aligned with the game.
+gui.DisplayOrder=4000
+gui.Parent=pg
+local panel=Instance.new("Frame")
+panel.Size=UDim2.fromOffset(298,222)
+panel.Position=UDim2.new(1,-306,0.31,0)
+panel.BackgroundColor3=color(10,20,15)
+panel.BorderSizePixel=0
+panel.Active=true
+panel.Parent=gui
+round(panel,11)
+local border=Instance.new("UIStroke")
+border.Color=color(40,202,93)
+border.Thickness=1
+border.Parent=panel
+local function text(value,y,h,size,c)
+    local t=Instance.new("TextLabel")
+    t.BackgroundTransparency=1
+    t.Position=UDim2.fromOffset(11,y)
+    t.Size=UDim2.new(1,-22,0,h)
+    t.Font=Enum.Font.GothamBold
+    t.TextSize=size or 11
+    t.TextColor3=c or color(229,245,233)
+    t.TextWrapped=true
+    t.TextXAlignment=Enum.TextXAlignment.Left
+    t.TextYAlignment=Enum.TextYAlignment.Center
+    t.Text=value
+    t.Parent=panel
     return t
 end
-text('NeXLua Hub | MOBILE TAP CHECK',9,20,14,C(61,235,110))
-text('YouTube: @NexLuaRBX',32,17,10,C(150,197,164))
-local arm = Instance.new('TextButton')
-arm.Size = UDim2.new(1,-20,0,37)
-arm.Position = UDim2.fromOffset(10,57)
-arm.BackgroundColor3 = C(21,132,65)
-arm.Text = 'WATCH ONE REAL TAP'
-arm.Font = Enum.Font.GothamBold
-arm.TextSize = 12
-arm.TextColor3 = C(255,255,255)
-arm.Parent = frame
-corner(arm,7)
-local status = text('Sit at your table, then press WATCH.',101,40,11)
-local detail = text('No automatic input will be sent.',144,30,10,C(148,191,162))
-
-local function show(s,d)
-    if status and status.Parent then status.Text = s end
-    if d and detail and detail.Parent then detail.Text = d end
-end
+text("NeXLua Hub | TWO-TAP CHECK",7,23,14,color(52,231,113))
+text("YouTube: @NexLuaRBX",30,19,10,color(162,201,176))
+local btn=Instance.new("TextButton")
+btn.Size=UDim2.new(1,-22,0,40)
+btn.Position=UDim2.fromOffset(11,56)
+btn.BackgroundColor3=color(25,132,69)
+btn.Font=Enum.Font.GothamBold
+btn.TextColor3=color(255,255,255)
+btn.TextSize=12
+btn.Text="WATCH TWO REAL TAPS"
+btn.Parent=panel
+round(btn,7)
+local st1=text("Ready: sit at your table first.",101,36,11)
+local st2=text("Tap 1: --",138,21,10,color(161,201,173))
+local st3=text("Tap 2: --",160,21,10,color(161,201,173))
+local st4=text("No input will be simulated.",183,30,10,color(95,233,137))
 
 local function ownButton()
-    local char = LP.Character
-    local hum = char and char:FindFirstChildOfClass('Humanoid')
-    local root = char and char:FindFirstChild('HumanoidRootPart')
+    local character=LP.Character
+    local hum=character and character:FindFirstChildOfClass("Humanoid")
+    local root=character and character:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
-    local folder = WS:FindFirstChild('GameStations')
-    if not folder then return nil end
-    local best, distance = nil, math.huge
-    for _,obj in ipairs(folder:GetDescendants()) do
-        if obj.Name == 'Buttons' then
-            local p1 = obj:FindFirstChild('Player1')
-            local p2 = obj:FindFirstChild('Player2')
-            local a = p1 and p1:FindFirstChild('Button')
-            local b = p2 and p2:FindFirstChild('Button')
-            if a and b and a:IsA('BasePart') and b:IsA('BasePart') then
-                local station = obj.Parent
-                local seat = hum and hum.SeatPart
-                if seat and seat:IsDescendantOf(station) then
-                    local da = (seat.Position-a.Position).Magnitude
-                    local db = (seat.Position-b.Position).Magnitude
-                    return da < db and a or b
+    local rootFolder=WS:FindFirstChild("GameStations")
+    if not rootFolder then return nil end
+    local best, bestD=nil,math.huge
+    for _,item in ipairs(rootFolder:GetDescendants()) do
+        if item.Name=="Buttons" then
+            local p1=item:FindFirstChild("Player1")
+            local p2=item:FindFirstChild("Player2")
+            local a=p1 and p1:FindFirstChild("Button")
+            local b=p2 and p2:FindFirstChild("Button")
+            if a and b and a:IsA("BasePart") and b:IsA("BasePart") then
+                local tableModel=item.Parent
+                local seat=hum and hum.SeatPart
+                if seat and seat:IsDescendantOf(tableModel) then
+                    local d1=(seat.Position-a.Position).Magnitude
+                    local d2=(seat.Position-b.Position).Magnitude
+                    return d1<=d2 and a or b
                 end
-                for _,candidate in ipairs({a,b}) do
-                    local d = (root.Position-candidate.Position).Magnitude
-                    if d < distance then
-                        distance = d
-                        best = candidate
-                    end
+                for _,p in ipairs({a,b}) do
+                    local dist=(p.Position-root.Position).Magnitude
+                    if dist<bestD then bestD,best=dist,p end
                 end
             end
         end
     end
-    if distance < 20 then return best end
-    return nil
+    return bestD<20 and best or nil
 end
 
-local function detectorsFor(part)
-    local result, seen = {}, {}
-    for _,obj in ipairs(part:GetDescendants()) do
-        if obj:IsA('ClickDetector') then
-            seen[obj] = true
-            table.insert(result,obj)
-        end
-    end
-    local p = part
-    for _=1,2 do
-        p = p.Parent
-        if not p then break end
-        local d = p:FindFirstChildOfClass('ClickDetector')
-        if d and not seen[d] then
-            seen[d] = true
-            table.insert(result,d)
-        end
-    end
-    return result
+local function tappedOwnButton(input)
+    if input.UserInputType~=Enum.UserInputType.Touch then return false end
+    local part=ownButton()
+    if not part then return false end
+    local cam=WS.CurrentCamera
+    if not cam then return false end
+    local v,visible=cam:WorldToViewportPoint(part.Position)
+    if not visible or v.Z<=0 then return false end
+    local pos=Vector2.new(input.Position.X,input.Position.Y)
+    local center=Vector2.new(v.X,v.Y)
+    local inset=Vector2.zero
+    pcall(function() inset=GuiService:GetGuiInset() end)
+    local d=math.min((pos-center).Magnitude,(pos-center-inset).Magnitude)
+    if d>115 then return false end
+    return true,part
 end
 
-local function installSpy()
-    if spy.installed then return true end
-    local hook = env.hookmetamethod or hookmetamethod
-    local method = env.getnamecallmethod or getnamecallmethod
-    local nc = env.newcclosure or newcclosure
-    if type(hook) ~= 'function' or type(method) ~= 'function' then
-        return false
+local function hashValue(s)
+    local h=5381
+    for i=1,#s do
+        h=(h*33+s:byte(i))%2147483647
     end
-    local ok = pcall(function()
-        local old
-        local fn = function(self,...)
-            -- Only record names, never payloads. Nothing is replayed.
-            if spy.active then
-                local m = method()
-                if (m == 'FireServer' or m == 'InvokeServer') and typeof(self) == 'Instance' then
-                    if self:IsA('RemoteEvent') or self:IsA('RemoteFunction')
-                        or self:IsA('UnreliableRemoteEvent') then
-                        local name = self.Name
-                        local cap = spy.capture
-                        if cap and os.clock() - cap.started < 0.85 then
-                            cap.calls[name] = (cap.calls[name] or 0) + 1
-                        elseif spy.before then
-                            spy.before[name] = (spy.before[name] or 0) + 1
-                        end
-                    end
+    return string.format("%08x",h)
+end
+local function signature(v,depth)
+    depth=depth or 0
+    local typ=typeof(v)
+    if typ=="buffer" then
+        local ok,length=pcall(buffer.len,v)
+        if not ok then return "buffer:?" end
+        local excerpt={}
+        local amount=math.min(length,512)
+        for i=0,amount-1 do
+            local good,b=pcall(buffer.readu8,v,i)
+            if not good then break end
+            excerpt[#excerpt+1]=string.char(b)
+        end
+        return "buffer:"..tostring(length)..":"..hashValue(table.concat(excerpt))
+    elseif typ=="string" then
+        return "str:"..#v..":"..hashValue(v:sub(1,512))
+    elseif typ=="number" or typ=="boolean" or typ=="nil" then
+        return typ..":"..tostring(v)
+    elseif typ=="Instance" then
+        local ok,full=pcall(function() return v:GetFullName() end)
+        return "instance:"..(ok and full or v.Name)
+    elseif typ=="table" then
+        if depth>=2 then return "table:deep" end
+        local parts={}
+        local count=0
+        for k,value in pairs(v) do
+            count=count+1
+            if count<=24 then
+                parts[#parts+1]=tostring(k).."="..signature(value,depth+1)
+            end
+        end
+        table.sort(parts)
+        return "table:"..count.."{"..table.concat(parts,";").."}"
+    end
+    return typ
+end
+local function captureArgs(...)
+    local count=select("#",...)
+    local sign={}
+    for i=1,math.min(count,12) do
+        local v=select(i,...)
+        local ok,result=pcall(signature,v,0)
+        sign[#sign+1]=ok and result or "arg:error"
+    end
+    return count,sign
+end
+
+local function installHook()
+    if S.hookInstalled then return true end
+    local hook=env.hookmetamethod or hookmetamethod
+    local getMethod=env.getnamecallmethod or getnamecallmethod
+    local nc=env.newcclosure or newcclosure
+    if type(hook)~="function" or type(getMethod)~="function" then return false end
+    local ok=pcall(function()
+        local original
+        local intercept=function(self,...)
+            -- Observe, never replace, the original call.
+            if S.alive and S.armed then
+                local method=getMethod()
+                if (method=="FireServer" or method=="InvokeServer") and typeof(self)=="Instance"
+                    and (self:IsA("RemoteEvent") or self:IsA("RemoteFunction") or self:IsA("UnreliableRemoteEvent")) then
+                    local now=os.clock()
+                    local okArgs,n,args=pcall(captureArgs,...)
+                    S.recent[#S.recent+1]={at=now,remote=self,method=method,count=okArgs and n or -1,args=okArgs and args or {"unreadable"}}
+                    while #S.recent>40 do table.remove(S.recent,1) end
                 end
             end
-            return old(self,...)
+            return original(self,...)
         end
-        old = hook(game,'__namecall',type(nc)=='function' and nc(fn) or fn)
-        spy.installed = true
+        original=hook(game,"__namecall",type(nc)=="function" and nc(intercept) or intercept)
+        S.hookInstalled=true
     end)
     return ok
 end
 
-local function touchNearButton(input,part)
-    if input.UserInputType ~= Enum.UserInputType.Touch then return false end
-    local camera = WS.CurrentCamera
-    if not camera then return false end
-    local v,visible = camera:WorldToViewportPoint(part.Position)
-    if not visible or v.Z <= 0 then return false end
-    local xy = Vector2.new(input.Position.X,input.Position.Y)
-    local center = Vector2.new(v.X,v.Y)
-    local inset = Vector2.zero
-    pcall(function() inset = GuiService:GetGuiInset() end)
-    return math.min((xy-center).Magnitude,(xy-center-inset).Magnitude) < 135
+local function summarize(calls)
+    if #calls==0 then return "NO REMOTE",nil end
+    -- Prefer the most frequent event immediately following the real tap.
+    local grouped={}
+    local winner,most=nil,0
+    for _,c in ipairs(calls) do
+        local key=c.remote:GetFullName().."|"..c.method
+        local item=grouped[key]
+        if not item then item={count=0,event=c}; grouped[key]=item end
+        item.count=item.count+1
+        if item.count>most then winner,most=item.event,item.count end
+    end
+    return (winner and winner.remote.Name or "UNKNOWN").." ("..#calls.." calls)",winner
 end
 
-spy.Stop = function()
-    spy.active = false
-    spy.capture, spy.before = nil,nil
-    clearWatch()
-    for _,c in ipairs(spy.connections) do pcall(function() c:Disconnect() end) end
-    spy.connections = {}
-    pcall(function() gui:Destroy() end)
+local function compare(a,b)
+    if not a or not b then return "COMPARISON INCOMPLETE" end
+    if a.remote~=b.remote or a.method~=b.method then
+        return "DIFFERENT REMOTE/METHOD - NEEDS REVIEW"
+    end
+    if a.count~=b.count then
+        return "SAME REMOTE; ARG COUNT CHANGED: "..a.count.."/"..b.count
+    end
+    local changed={}
+    for i=1,math.max(#a.args,#b.args) do
+        if a.args[i]~=b.args[i] then changed[#changed+1]=tostring(i) end
+    end
+    if #changed>0 then
+        return "SAME REMOTE; CHANGED ARGS: "..table.concat(changed,",")
+    end
+    return "SAME REMOTE + SAME PAYLOAD (first 512B)"
 end
 
-local watchId = 0
-track(arm.Activated,function()
-    if spy.active then
-        show('Already watching: tap the red button.', 'One manual touch only.')
+local watchId=0
+track(btn.Activated,function()
+    if S.armed then return end
+    if not ownButton() then
+        st1.Text="TABLE NOT FOUND. Sit down first."
         return
     end
-    clearWatch()
-    local part = ownButton()
-    if not part then
-        show('TABLE NOT FOUND','Sit down at a table and press WATCH again.')
+    if not installHook() then
+        st1.Text="DELTA HOOK UNAVAILABLE"
         return
     end
-    local hookOK = installSpy()
-    spy.active = true
-    spy.before = {}
-    spy.capture = nil
-    local nativeFired = false
-    local nativeDetectors = detectorsFor(part)
-    watchId = watchId + 1
-    local thisWatch = watchId
-    local tapStarted = false
-    for _,d in ipairs(nativeDetectors) do
-        trackWatch(d.MouseClick,function(who)
-            if who == LP then nativeFired = true end
-        end)
-    end
-    trackWatch(UIS.InputBegan,function(input)
-        if tapStarted or not spy.active or not touchNearButton(input,part) then return end
-        tapStarted = true
-        spy.capture = {started = os.clock(), calls = {}}
-        show('REAL TAP DETECTED', 'Checking native ClickDetector and remote events...')
-        task.delay(1.10,function()
-            if thisWatch ~= watchId then return end
-            local cap = spy.capture
-            local entries = {}
-            if cap then
-                for name,count in pairs(cap.calls) do
-                    local beforeCount = (spy.before and spy.before[name]) or 0
-                    entries[#entries+1] = {name=name,count=count,before=beforeCount}
-                end
-            end
-            table.sort(entries,function(a,b) return a.count>b.count end)
-            local native = #nativeDetectors == 0 and 'NO DETECTOR' or
-                (nativeFired and 'DETECTOR FIRED' or 'DETECTOR NOT FIRED')
-            local remote = #entries == 0 and 'NO REMOTE' or entries[1].name
-            show(native..' | '..remote,
-                'Remotes: '..tostring(#entries)..' | Spy: '..(hookOK and 'OK' or 'BLOCKED')..
-                ' | Earlier traffic: '..(entries[1] and tostring(entries[1].before) or '0'))
-            spy.active = false
-            clearWatch()
-        end)
-    end)
-    show('WATCHING YOUR RED BUTTON',
-        'Detector nodes: '..#nativeDetectors..' | Remote spy: '..(hookOK and 'READY' or 'UNAVAILABLE'))
-    task.delay(24,function()
-        if thisWatch == watchId and spy.active and not tapStarted then
-            spy.active = false
-            clearWatch()
-            show('TIMEOUT', 'Press WATCH and tap the red button on your turn.')
+    S.captures={}
+    S.recent={}
+    S.armed=true
+    S.busy=false
+    S.run=S.run+1
+    watchId=S.run
+    st1.Text="WAITING FOR TAP 1 / 2"
+    st2.Text="Tap 1: --"
+    st3.Text="Tap 2: --"
+    st4.Text="Use the real red button in two rounds."
+    btn.Text="WATCHING..."
+    task.delay(180,function()
+        if S.alive and S.armed and S.run==watchId then
+            S.armed=false
+            S.busy=false
+            btn.Text="WATCH TWO REAL TAPS"
+            st1.Text="TIMEOUT. Start the test again."
         end
     end)
 end)
 
--- Drag from the header, without changing input device mode.
-local dragging, dragRef, first, origin = false,nil,nil,nil
-track(frame.InputBegan,function(input)
-    if input.UserInputType == Enum.UserInputType.Touch and input.Position.Y < frame.AbsolutePosition.Y+50 then
-        dragging,dragRef,first,origin = true,input,input.Position,frame.Position
+track(UIS.InputBegan,function(input)
+    if not S.alive or not S.armed or S.busy then return end
+    local yes,part=tappedOwnButton(input)
+    if not yes then return end
+    S.busy=true
+    local tapNo=#S.captures+1
+    local tapAt=os.clock()
+    local matching={}
+    for _,call in ipairs(S.recent) do
+        if call.at>=tapAt-0.12 and call.at<tapAt then matching[#matching+1]=call end
+    end
+    st1.Text="CAPTURING TAP "..tapNo.." / 2"
+    task.delay(1.08,function()
+        if not S.alive then return end
+        for _,call in ipairs(S.recent) do
+            if call.at>=tapAt and call.at<tapAt+0.9 then
+                matching[#matching+1]=call
+            end
+        end
+        local label,best=summarize(matching)
+        S.captures[tapNo]=best
+        if tapNo==1 then
+            st2.Text="Tap 1: "..label
+            st1.Text="WAITING FOR TAP 2 / 2 (next round)"
+            st4.Text="Make another REAL tap in the next round."
+        else
+            st3.Text="Tap 2: "..label
+            st1.Text="TWO-TAP COMPARISON COMPLETE"
+            st4.Text=compare(S.captures[1],S.captures[2])
+            S.armed=false
+            btn.Text="WATCH TWO REAL TAPS"
+        end
+        S.busy=false
+        S.recent={}
+    end)
+end)
+
+local dragging,dragRef,dragStart,frameStart=false,nil,nil,nil
+track(panel.InputBegan,function(input)
+    if input.UserInputType==Enum.UserInputType.Touch
+        and input.Position.Y<panel.AbsolutePosition.Y+50 then
+        dragging,dragRef,dragStart,frameStart=true,input,input.Position,panel.Position
     end
 end)
 track(UIS.InputChanged,function(input)
-    if dragging and input == dragRef then
-        local d = input.Position-first
-        frame.Position = UDim2.new(origin.X.Scale,origin.X.Offset+d.X,origin.Y.Scale,origin.Y.Offset+d.Y)
+    if dragging and input==dragRef then
+        local d=input.Position-dragStart
+        panel.Position=UDim2.new(frameStart.X.Scale,frameStart.X.Offset+d.X,frameStart.Y.Scale,frameStart.Y.Offset+d.Y)
     end
 end)
 track(UIS.InputEnded,function(input)
-    if input == dragRef then dragging,dragRef = false,nil end
+    if input==dragRef then dragging,dragRef=false,nil end
 end)
-print('[NeXLua V14] Manual Tap Probe ready: no remote replay or simulated clicks.')
+
+env.NeXLuaTapCompareStop=function()
+    S.alive=false
+    S.armed=false
+    for _,conn in ipairs(S.connections) do pcall(function() conn:Disconnect() end) end
+    pcall(function() gui:Destroy() end)
+end
+print("[NeXLua V15] Two real mobile taps diagnostic loaded; no clicks or remote replay.")
