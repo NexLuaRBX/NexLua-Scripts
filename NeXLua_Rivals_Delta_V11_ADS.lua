@@ -1,9 +1,9 @@
--- NeXLua Rivals V11 / Delta ADS
--- Mobile AIM: toggle Head Lock and attempt actual weapon ADS/scope. No auto fire.
+-- NeXLua Rivals V12 / Native Mobile ADS
+-- Never simulates mouse or touch input; follows the game's own Scope/ADS control. No auto fire.
 local __loadedOk, __loadedError = xpcall(function()
 
 --[[
-    NeXLua Hub V11 | RIVALS DELTA ADS EDITION
+    NeXLua Hub V12 | RIVALS MOBILE NATIVE EDITION
     MINIMAL HEALTH ESP + SMART HEAD LOCK
 
     Wallhack rojo
@@ -49,17 +49,19 @@ local ultimaVision = 0
 local ultimoCheck = 0
 local proximaBusqueda = 0
 
-local mobileAimLatched = false
-local adsMethod = nil -- "native" (RIVALS touch scope control) or "rmb" (right-click held)
-local adsControl = nil
-local adsWorking = false  -- input accepted; NOT proof the gun scoped
-local adsBusy = false
+-- We ONLY observe the game's native mobile ADS state.
+-- The V11 virtual RMB fallback could make Roblox switch from touch to PC controls.
+local nativeScopeToggle = false
+local nativeScopeHeld = false
+local scopeFOVBaseline = nil
+local scopeObserved = false
+local scopeBoundButtons = setmetatable({}, {__mode = "k"})
 
 local highlights = {}
 local healthDisplays = {}
 local conexiones = {}
 
-local RENDER_NAME = "NeXLuaRivalsSmartAimV11"
+local RENDER_NAME = "NeXLuaRivalsSmartAimV12"
 
 local function conectar(signal, callback)
     local c = signal:Connect(callback)
@@ -149,11 +151,11 @@ end
 --====================================
 
 local folder = Instance.new("Folder")
-folder.Name = "NeXLuaRivalsESP_V11"
+folder.Name = "NeXLuaRivalsESP_V12"
 folder.Parent = WS
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "NeXLuaRivalsMenuV11"
+gui.Name = "NeXLuaRivalsMenuV12"
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 999
 gui.Parent = LP:WaitForChild("PlayerGui")
@@ -483,10 +485,27 @@ local function actualizarAim()
         return
     end
 
-    -- On phones the touch toggle is the only aim activation input.
-    -- On desktop, preserve the original right-click behavior.
-    local presionando = mobileAimLatched
-    if not presionando and not UIS.TouchEnabled then
+    -- On mobile, observe the game's OWN Scope/ADS state. Never inject clicks:
+    -- synthetic RMB can make Roblox hide the touch joystick and HUD.
+    local presionando
+    if UIS.TouchEnabled then
+        local cameraForScope = WS.CurrentCamera
+        local isZoomed = false
+        if cameraForScope then
+            local fov = cameraForScope.FieldOfView
+            if not scopeFOVBaseline then scopeFOVBaseline = fov end
+            if fov > scopeFOVBaseline + 0.15 then
+                scopeFOVBaseline = fov
+            end
+            -- Zoom is an extra indication of native ADS even when the game's
+            -- Scope GUI is unnamed. Do not mistake small camera effects for ADS.
+            isZoomed = scopeFOVBaseline - fov >= 7.0
+            if isZoomed then scopeObserved = true end
+        end
+        -- If FOV-based detection has ever confirmed native ADS, use it as the
+        -- authoritative state to avoid a stale tap latching the camera forever.
+        presionando = isZoomed or (not scopeObserved and (nativeScopeToggle or nativeScopeHeld))
+    else
         presionando = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
     end
 
@@ -700,7 +719,7 @@ local function openChannel()
 end
 
 -- Reuse the already-created ScreenGui from the original Rivals script.
-gui.Name = "NeXLua_Rivals_Hub_V11_DeltaADS"
+gui.Name = "NeXLua_Rivals_Hub_V12_NativeADS"
 gui.IgnoreGuiInset = true
 gui.DisplayOrder = 999999
 
@@ -801,7 +820,7 @@ local wallRow, wallTrack, wallKnob = featureRow(
     "Wallhack ESP", "Enemy outlines + health", 4
 )
 local aimRow, aimTrack, aimKnob = featureRow(
-    "Head Lock", "PC: RMB / mobile: tap for ADS", 60
+    "Head Lock", "PC: RMB / mobile: game Scope", 60
 )
 
 local footer = textLabel(body, "RIVALS EDITION  •  NEXLUA", 9, THEME.muted, false)
@@ -815,148 +834,76 @@ local function setVisual(track, knob, enabled)
         or UDim2.fromOffset(2, 2)
 end
 
--- RIVALS mobile has a separate ADS/scope input. A camera lock alone
--- DOES NOT aim down sights and cannot remove a weapon's hip-fire spread.
--- Best effort: use a clearly identified native ADS touch GUI control.
--- If unavailable, try holding the game's right-mouse/secondary action.
--- Delta may restrict these virtual inputs; NEVER simulate a shot.
-local VIM
-pcall(function() VIM = game:GetService("VirtualInputManager") end)
+-- NATIVE MOBILE ADS DETECTION
+-- Listen to the game's existing scope control. We never trigger it ourselves,
+-- never invoke synthetic inputs or emulate MouseButton2/Touch input.
+-- Works alongside the normal joystick and shooting buttons.
+local function isNativeScopeButton(button)
+    if not button:IsA("GuiButton") or button:IsDescendantOf(gui) then return false end
+    local screen = button:FindFirstAncestorOfClass("ScreenGui")
+    if not screen then return false end
 
-local function isGameADSToggle(b)
-    if not b:IsA("GuiButton") or not b.Visible or not b.Active then return false end
-    if b:IsDescendantOf(gui) then return false end
-    local size = b.AbsoluteSize
-    if size.X < 12 or size.Y < 12 then return false end
-    local screen = b:FindFirstAncestorOfClass("ScreenGui")
-    if not screen or not screen.Enabled then return false end
-    local parts = {b.Name}
-    local p = b.Parent
-    if p and p ~= screen then parts[#parts+1] = p.Name end
-    if b:IsA("TextButton") then parts[#parts+1] = b.Text end
-    local label = table.concat(parts, " "):lower()
-    -- Insist on distinct names: never guess at Fire/Shoot/Reload controls.
-    if label:find("shoot", 1, true) or label:find("fire", 1, true)
-       or label:find("reload", 1, true) or label:find("grenade", 1, true) then return false end
-    for _,token in ipairs({"scope", "scop", "adsbutton", "aimbutton", "aim_btn", "aiming",
-                              "aim", "sight", "zoom", "secondarybutton", "secondaryaction"}) do
-        if label:find(token, 1, true) then return true end
+    local bits = {button.Name}
+    local ancestor = button.Parent
+    for _ = 1, 2 do
+        if not ancestor or ancestor == screen then break end
+        bits[#bits+1] = ancestor.Name
+        ancestor = ancestor.Parent
+    end
+    if button:IsA("TextButton") then bits[#bits+1] = button.Text end
+    local name = table.concat(bits, " "):lower()
+    for _, exclude in ipairs({"reload", "shoot", "fire", "grenade", "sensitivity", "setting", "crosshair"}) do
+        if name:find(exclude, 1, true) then return false end
+    end
+    for _, token in ipairs({"scope", "scoped", "aimbutton", "aim_btn", "adsbutton", "ads_btn", "zoom", "sights", "aim"}) do
+        if name:find(token, 1, true) then return true end
     end
     return false
 end
 
-local function findGameADSButton()
-    local pg = LP:FindFirstChildOfClass("PlayerGui")
-    if not pg then return nil end
-    local best, bestScore = nil, -1
-    for _,v in ipairs(pg:GetDescendants()) do
-        if isGameADSToggle(v) then
-            local name = v.Name:lower()
-            local score = name:find("scope", 1, true) and 5
-                or name:find("ads", 1, true) and 4
-                or name:find("aim", 1, true) and 3 or 1
-            local p = v.Parent
-            -- Prefer actual HUD controls to settings buttons.
-            if p and tostring(p.Name):lower():find("touch", 1, true) then score = score + 2 end
-            if score > bestScore then best, bestScore = v, score end
+local function bindNativeScopeButton(button)
+    if scopeBoundButtons[button] or not isNativeScopeButton(button) then return end
+    scopeBoundButtons[button] = true
+    -- Merely listening to Activated does NOT steal/replace the game's input.
+    conectar(button.Activated, function()
+        if not activo or not UIS.TouchEnabled then return end
+        nativeScopeToggle = not nativeScopeToggle
+        if not nativeScopeToggle then soltarObjetivo() end
+    end)
+    conectar(button.InputBegan, function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            nativeScopeHeld = true
         end
-    end
-    return best
-end
-
-local function tapGameADSButton(b)
-    if not VIM or not b or not b.Parent or not isGameADSToggle(b) then return false end
-    local p, sz = b.AbsolutePosition, b.AbsoluteSize
-    local x = math.floor(p.X + sz.X / 2)
-    local y = math.floor(p.Y + sz.Y / 2)
-    if x <= 0 or y <= 0 then return false end
-    -- Genuine simulated touch input is more relevant to a mobile HUD than RMB.
-    local ok = pcall(function() VIM:SendTouchEvent(189, 0, x, y) end)
-    if ok then
-        task.wait(0.055)
-        local ended = pcall(function() VIM:SendTouchEvent(189, 2, x, y) end)
-        if ended then return true end
-    end
-    -- Mouse press on a GUI button is a fallback for executors without touch injection.
-    local down = pcall(function() VIM:SendMouseButtonEvent(x, y, 0, true, game, 0) end)
-    if not down then return false end
-    task.wait(0.045)
-    return pcall(function() VIM:SendMouseButtonEvent(x, y, 0, false, game, 0) end)
-end
-
-local function sendRMB(down)
-    if not VIM then return false end
-    local cam = WS.CurrentCamera
-    if not cam then return false end
-    local sz = cam.ViewportSize
-    local x = math.floor(sz.X * 0.5)
-    local y = math.floor(sz.Y * 0.5)
-    return pcall(function()
-        VIM:SendMouseButtonEvent(x, y, 1, down, game, 0)
+    end)
+    conectar(button.InputEnded, function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            nativeScopeHeld = false
+        end
     end)
 end
 
-local function setMobileADS(wanted)
-    if adsBusy then return end
-    adsBusy = true
-    if wanted then
-        local native = findGameADSButton()
-        if native and tapGameADSButton(native) then
-            adsMethod, adsControl, adsWorking = "native", native, true
-        elseif sendRMB(true) then
-            adsMethod, adsControl, adsWorking = "rmb", nil, true
-        else
-            adsMethod, adsControl, adsWorking = nil, nil, false
-            notify("Head Lock ON, but ADS input is blocked. Use the game's Scope button.")
-        end
-    else
-        if adsMethod == "native" then
-            -- The native mobile Scope button usually operates as a toggle.
-            tapGameADSButton(adsControl or findGameADSButton())
-        elseif adsMethod == "rmb" then
-            sendRMB(false)
-        end
-        adsMethod, adsControl, adsWorking = nil, nil, false
+local function scanNativeScopeButtons()
+    local playerGui = LP:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return end
+    for _, obj in ipairs(playerGui:GetDescendants()) do
+        if obj:IsA("GuiButton") then bindNativeScopeButton(obj) end
     end
-    adsBusy = false
 end
 
--- Mobile: one tap activates the camera lock AND attempts real ADS.
--- Another tap releases it. Automatic firing is intentionally absent.
-local mobileBtn = Instance.new("TextButton")
-mobileBtn.Name = "NeXLuaMobileAim"
-mobileBtn.Size = UDim2.fromOffset(76, 76)
--- Keep the AIM latch away from the left movement joystick.
-mobileBtn.Position = UDim2.new(1, -93, 0.52, -38)
-mobileBtn.BackgroundColor3 = THEME.red
-mobileBtn.BackgroundTransparency = 0.08
-mobileBtn.Text = "AIM OFF"
-mobileBtn.TextSize = 15
-mobileBtn.Font = Enum.Font.GothamBold
-mobileBtn.TextColor3 = THEME.white
-mobileBtn.Active = true
-mobileBtn.Parent = gui
-round(mobileBtn, 38)
-stroke(mobileBtn)
-
-local function updateMobileAimButton()
-    mobileBtn.Text = mobileAimLatched and (adsWorking and "ADS SENT" or "AIM ONLY") or "AIM OFF"
-    mobileBtn.TextSize = mobileAimLatched and 12 or 15
-    mobileBtn.BackgroundColor3 = mobileAimLatched and THEME.darkGreen or THEME.red
-end
+-- Native RIVALS HUD may recreate its scope button on respawn or weapon switch.
+task.spawn(function()
+    while activo do
+        if UIS.TouchEnabled then
+            pcall(scanNativeScopeButtons)
+        end
+        task.wait(2)
+    end
+end)
 
 local function updateMenu()
     setVisual(wallTrack, wallKnob, CFG.Wallhack)
     setVisual(aimTrack, aimKnob, CFG.Aimbot)
-    mobileBtn.Visible = UIS.TouchEnabled and CFG.Aimbot
-    if not CFG.Aimbot then
-        soltarObjetivo()
-        if mobileAimLatched or adsMethod then
-            mobileAimLatched = false
-            setMobileADS(false)
-        end
-    end
-    updateMobileAimButton()
+    if not CFG.Aimbot then soltarObjetivo() end
 end
 
 conectar(wallRow.Activated, function()
@@ -970,17 +917,6 @@ end)
 conectar(aimRow.Activated, function()
     CFG.Aimbot = not CFG.Aimbot
     updateMenu()
-end)
-
--- Activated fires once per completed tap. Lifting the finger and
--- moving with the on-screen joystick do not cancel aiming.
-conectar(mobileBtn.Activated, function()
-    if not CFG.Aimbot or adsBusy then return end
-    mobileAimLatched = not mobileAimLatched
-    if not mobileAimLatched then soltarObjetivo() end
-    -- Execute the native scope action together with NeXLua's camera lock.
-    setMobileADS(mobileAimLatched)
-    updateMobileAimButton()
 end)
 
 -- Minimize without stopping ESP or Head Lock.
@@ -1042,8 +978,8 @@ local function detener()
 
     activo = false
     soltarObjetivo()
-    mobileAimLatched = false
-    setMobileADS(false) -- ensure virtual secondary input is released on Close/re-execute
+    nativeScopeToggle = false
+    nativeScopeHeld = false
 
     pcall(function() RS:UnbindFromRenderStep(RENDER_NAME) end)
     if renderConnection then renderConnection:Disconnect() end
@@ -1067,7 +1003,7 @@ local function detener()
         env.RivalsESP_Stop = nil
     end
 
-    print("[NeXLua Rivals V11 Delta ADS] Stopped")
+    print("[NeXLua Rivals V12 Native ADS] Stopped")
 end
 
 env.RivalsESP_Stop = detener
@@ -1085,9 +1021,9 @@ task.spawn(function()
 end)
 
 print("===================================")
-print("[NeXLua Rivals V11 Delta ADS] Loaded")
+print("[NeXLua Rivals V12 Native ADS] Loaded")
 print("[Wallhack ESP] Enabled by default")
-print("[Head Lock 360] ON by default; mobile tries native Scope/ADS or RMB")
+print("[Head Lock 360] ON by default; uses ONLY the game native Scope on mobile")
 print("[Team recognition] Active")
 print("===================================")
 
