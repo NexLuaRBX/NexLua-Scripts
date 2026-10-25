@@ -1,712 +1,367 @@
--- NeXLua Hub | Arsenal Edition | PC + Mobile
--- PC: E toggles Aimbot, V toggles Wallhack. Mobile: use the quick controls.
-
-local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-
-local LP = Players.LocalPlayer
-local PlayerGui = LP:WaitForChild("PlayerGui")
-
-local AIM = false
-local ESP = true
-local TARGET = nil
-
-local ESP_NAME = "ArsenalHubESP"
-local STEP_NAME = "ArsenalHubAim"
-
--- CLEAN UP PREVIOUS EXECUTIONS
-local env = (type(getgenv) == "function"
-    and getgenv()) or _G
-
-if type(env.ArsenalHubStop) == "function" then
-    pcall(env.ArsenalHubStop)
-end
-
-for _, name in ipairs({
-    "ArsenalHeadAimlock",
-    "ArsenalInstantHeadlock",
-    "ArsenalAutoAimlock",
-    STEP_NAME
-}) do
-    RunService:UnbindFromRenderStep(name)
-end
-
-local connections = {}
-
-local function listen(signal, callback)
-    local connection = signal:Connect(callback)
-    table.insert(connections, connection)
-    return connection
-end
-
--- TEAM CHECK
-local function isEnemy(player)
-    if player == LP then return false end
-
-    if LP.Team == nil then
-        return player.Team == nil
-    end
-
-    return player.Team ~= nil
-        and player.Team ~= LP.Team
-end
-
--- WALLHACK
-local function updateESP(player)
-    if player == LP then return end
-
-    local char = player.Character
-    if not char then return end
-
-    local h = char:FindFirstChild(ESP_NAME)
-
-    if not h then
-        h = Instance.new("Highlight")
-        h.Name = ESP_NAME
-        h.Adornee = char
-        h.DepthMode =
-            Enum.HighlightDepthMode.AlwaysOnTop
-        h.FillColor = Color3.fromRGB(255, 45, 65)
-        h.OutlineColor = Color3.fromRGB(255, 255, 255)
-        h.FillTransparency = 0.45
-        h.OutlineTransparency = 0
-        h.Parent = char
-    end
-
-    h.Enabled = ESP and isEnemy(player)
-end
-
-local function refreshESP()
-    for _, p in ipairs(Players:GetPlayers()) do
-        updateESP(p)
-    end
-end
-
-local function setupPlayer(player)
-    if player == LP then return end
-
-    listen(player.CharacterAdded, function()
-        updateESP(player)
-    end)
-
-    listen(player:GetPropertyChangedSignal("Team"),
-        function()
-            updateESP(player)
-            if TARGET == player and not isEnemy(player) then
-                TARGET = nil
-            end
-        end
-    )
-
-    updateESP(player)
-end
-
-for _, p in ipairs(Players:GetPlayers()) do
-    setupPlayer(p)
-end
-
-listen(Players.PlayerAdded, setupPlayer)
-listen(LP:GetPropertyChangedSignal("Team"), function()
-    TARGET = nil
-    refreshESP()
-end)
-
--- AIMBOT: CABEZA
-local function getHead(player)
-    local char = player.Character
-    if not char then return nil end
-
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    local head = char:FindFirstChild("Head")
-
-    if not hum or hum.Health <= 0 then
-        return nil
-    end
-
-    return head
-end
-
--- WALL CHECK
-local function visible(player)
-    local cam = workspace.CurrentCamera
-    local head = getHead(player)
-
-    if not cam or not head then return false end
-
-    local pos, onScreen =
-        cam:WorldToViewportPoint(head.Position)
-
-    if not onScreen or pos.Z <= 0 then
-        return false
-    end
-
-    local origin = cam.CFrame.Position
-    local direction = head.Position - origin
-
-    local ignore = {cam}
-
-    if LP.Character then
-        table.insert(ignore, LP.Character)
-    end
-
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = ignore
-    params.IgnoreWater = true
-
-    local hit = workspace:Raycast(
-        origin,
-        direction,
-        params
-    )
-
-    return hit ~= nil
-        and hit.Instance:IsDescendantOf(
-            player.Character
-        )
-end
-
--- FIND THE ENEMY CLOSEST TO THE CROSSHAIR
-local function nextTarget()
-    local cam = workspace.CurrentCamera
-    if not cam then return nil end
-
-    local center = Vector2.new(
-        cam.ViewportSize.X / 2,
-        cam.ViewportSize.Y / 2
-    )
-
-    local best = nil
-    local distance = math.huge
-
-    for _, p in ipairs(Players:GetPlayers()) do
-        if isEnemy(p) and visible(p) then
-            local head = getHead(p)
-
-            if head then
-                local pos =
-                    cam:WorldToViewportPoint(head.Position)
-
-                local d = (
-                    Vector2.new(pos.X, pos.Y) - center
-                ).Magnitude
-
-                if d < distance then
-                    distance = d
-                    best = p
-                end
-            end
-        end
-    end
-
-    return best
-end
-
--- INSTANT AIMBOT + AUTO TARGET SWITCH
-RunService:BindToRenderStep(
-    STEP_NAME,
-    Enum.RenderPriority.Camera.Value + 1,
-    function()
-        if not AIM then
-            TARGET = nil
-            return
-        end
-
-        local char = LP.Character
-        local hum = char and
-            char:FindFirstChildOfClass("Humanoid")
-
-        if not hum or hum.Health <= 0 then
-            TARGET = nil
-            return
-        end
-
-        if not TARGET
-            or not isEnemy(TARGET)
-            or not getHead(TARGET)
-            or not visible(TARGET) then
-
-            TARGET = nextTarget()
-        end
-
-        if not TARGET then return end
-
-        local head = getHead(TARGET)
-        local cam = workspace.CurrentCamera
-
-        if head and cam then
-            cam.CFrame = CFrame.lookAt(
-                cam.CFrame.Position,
-                head.Position
-            )
-        end
-    end
-)
-
-
--- NeXLua Hub | Compact green GUI
-local CHANNEL_URL = "https://www.youtube.com/@NexLuaRBX"
-local Theme = {
-    panel = Color3.fromRGB(12, 19, 16),
-    row = Color3.fromRGB(22, 35, 28),
-    border = Color3.fromRGB(39, 127, 72),
-    lime = Color3.fromRGB(51, 239, 103),
-    white = Color3.fromRGB(244, 252, 247),
-    muted = Color3.fromRGB(157, 185, 166),
-    off = Color3.fromRGB(108, 58, 65),
-    dark = Color3.fromRGB(8, 14, 11)
-}
-
-local oldGui = PlayerGui:FindFirstChild("NeXLua_Arsenal_Hub")
-if oldGui then oldGui:Destroy() end
-local gui = Instance.new("ScreenGui")
-gui.Name = "NeXLua_Arsenal_Hub"
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-gui.DisplayOrder = 999999
-gui.Parent = PlayerGui
-
-local function rounded(parent, radius)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, radius or 8)
-    c.Parent = parent
-    return c
-end
-local function outlined(parent, color)
-    local s = Instance.new("UIStroke")
-    s.Color = color or Theme.border
-    s.Thickness = 1
-    s.Transparency = 0.08
-    s.Parent = parent
-    return s
-end
-local function label(parent, value, size, color, bold)
-    local t = Instance.new("TextLabel")
-    t.BackgroundTransparency = 1
-    t.Text = value
-    t.TextColor3 = color or Theme.white
-    t.TextSize = size or 12
-    t.Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham
-    t.TextXAlignment = Enum.TextXAlignment.Left
-    t.Parent = parent
-    return t
-end
-local function button(parent, value)
-    local b = Instance.new("TextButton")
-    b.Text = value
-    b.Font = Enum.Font.GothamBold
-    b.TextColor3 = Theme.white
-    b.AutoButtonColor = true
-    b.BorderSizePixel = 0
-    b.Parent = parent
-    return b
-end
-local function notify(message)
-    pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "NeXLua Hub", Text = message, Duration = 4
-        })
-    end)
-end
-local function openChannel()
-    for _, key in ipairs({"openurl", "open_url", "openbrowser", "open_browser"}) do
-        local fn = env[key]
-        if type(fn) == "function" then
-            local ok = pcall(fn, CHANNEL_URL)
-            if ok then return end
-        end
-    end
-    local clipboard = env.setclipboard or env.toclipboard or setclipboard
-    if type(clipboard) == "function" and pcall(clipboard, CHANNEL_URL) then
-        notify("YouTube link copied to clipboard")
-    else
-        notify("YouTube: @NexLuaRBX")
-    end
-end
-local function decodeBase64(data)
-    local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-    local lookup = {}
-    for i = 1, #alphabet do lookup[alphabet:sub(i, i)] = i - 1 end
-    local result, carry, bits = {}, 0, 0
-    for i = 1, #data do
-        local num = lookup[data:sub(i, i)]
-        if num then
-            carry = carry * 64 + num
-            bits = bits + 6
-            if bits >= 8 then
-                bits = bits - 8
-                local b = math.floor(carry / (2 ^ bits))
-                result[#result + 1] = string.char(b % 256)
-                carry = carry % (2 ^ bits)
-            end
-        end
-    end
-    return table.concat(result)
-end
-local AVATAR_B64 = [[
-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
+local _0=[[
+sLC90/jF0ej8vdXo/73hvdzv7vjz/PG92Pn06fTy873hvc3evba90PL/9PH4veG92M7Nve/48fT8//Tx9Onkvejt+fzp+JewsL3N3qe92L3p8vr68fju
+vdz08P/y6bG9y73p8vr68fjuvcr88fH1/P72s73Q8v/08finveju+L3p9fi97Oj0/va9/vLz6e/y8e6zl5fx8v788b3N8fzk+O/uvaC9+vzw+Kfa+OnO
++O/r9P74tb/N8fzk+O/uv7SX8fL+/PG9yNTOvaC9+vzw+Kfa+OnO+O/r9P74tb/I7vjv1PPt6OnO+O/r9P74v7SX8fL+/PG9z+jzzvjv6/T++L2gvfr8
+8Pin2vjpzvjv6/T++LW/z+jzzvjv6/T++L+0l5fx8v788b3Rzb2gvc3x/OT47+6z0fL+/PHN8fzk+O+X8fL+/PG9zfH85Pjv2uj0vaC90c2nyvz06dvy
+79719PH5tb/N8fzk+O/a6PS/tJeX8fL+/PG93NTQvaC9+/zx7viX8fL+/PG92M7NvaC96e/o+Jfx8v788b3J3M/a2Mm9oL3z9PGXl/Hy/vzxvdjOzcLT
+3NDYvaC9v9zv7vjz/PHV6P/Yzs2/l/Hy/vzxvc7J2M3C09zQ2L2gvb/c7+748/zx1ej/3PTwv5eXsLC93tHY3NO9yM29zc/Yy9TSyM692MXY3sjJ1NLT
+zpfx8v788b348+u9oL216eTt+LX6+On6+PPrtL2goL2/++jz/un08vO/l729vb388/m9+vjp+vjz67W0tL3y773C2peX9Pu96eTt+LX48+uz3O/u+PP8
+8dXo/87p8u20vaCgvb/76PP+6fTy87+96fX485e9vb297f788fG1+PPrs9zv7vjz/PHV6P/O6fLttJf48/mXl/vy773Csb3z/PD4vfTzvfTt/PTv7rXm
+l729vb2/3O/u+PP88dX4/Pnc9PDx8v72v7GXvb29vb/c7+748/zx1PPu6fzz6dX4/Pnx8v72v7GXvb29vb/c7+748/zx3Ojp8tz08PHy/va/sZe9vb29
+zsnYzcLT3NDYl+C0vfnyl729vb3P6PPO+O/r9P74p8jz//Tz+dvv8vDP+PP5+O/O6fjttfP88Pi0l/jz+ZeX8fL+/PG9/vLz8/j+6fTy8+69oL3m4JeX
+8fL+/PG9++jz/un08vO98fTu6fjzte70+vP88bG9/vzx8f/8/va0l729vb3x8v788b3+8vPz+P7p9PLzvaC97vT68/zxp97y8/P4/um1/vzx8f/8/va0
+l729vb3p/P/x+LP08+747+m1/vLz8/j+6fTy8+6xvf7y8/P4/un08vO0l729vb3v+Ono7/O9/vLz8/j+6fTy85f48/mXl7Cwvc/Y0dTc39HYvcnY3NC9
+3tXY3ta9te7o7e3y7+nuven4/PC9+vzw+O69/PP5vfvv+Piw+/LvsPzx8b3v8ujz+e60l/Hy/vzxvfvo8/7p9PLzvfTu2PP48OS17fH85PjvtJe9vb29
+9Pu97fH85PjvvaCgvdHNvfLvve3x/OT477PN/O/48+m946C9zfH85Pjv7r3p9fjzl729vb29vb297/jp6O/zvfv88e74l729vb348/mXl729vb3x8v78
+8b3w5Mn4/PC9oL3RzbPJ+Pzwl729vb3x8v788b3p9fj078n4/PC9oL3t8fzk+O+zyfj88Je9vb299Pu98OTJ+Pzwvfzz+b3p9fj078n4/PC96fX485e9
+vb29vb29vfT7vfDkyfj88L3joL3p9fj078n4/PC96fX485e9vb29vb29vb29vb3v+Ono7/O96e/o+Je9vb29vb29vfjz+Ze9vb29vb29vfHy/vzxven4
+/PDT/PD4vaC97unv9PP6s/Hy6vjvtfDkyfj88LPT/PD4tJe9vb29vb29ve/46ejv873RzbPT+Ojp7/zxvfLvve3x/OT477PT+Ojp7/zxl729vb29vb29
+vb29vfLvven4/PDT/PD4vaCgvb/7+/y/l729vb29vb29vb29vfLvven4/PDT/PD4vaCgvb/77/j4vfvy77388fG/l729vb29vb29vb29vfLvven4/PDT
+/PD4vaCgvb/77/j4sPvy77D88fG/l729vb29vb29vb29vfLvven4/PDT/PD4vaCgvb/z+Ojp7/zxv5e9vb29+PP5l5e9vb29sLC91PO929vcsb356O/0
+8/q97/Lo8/m96e/88+706fTy8+6xvfLvver19PH4ven4/PDuvfzv+L3x8vz59PP6sb38l729vb2wsL3w9O7u9PP6vcn4/PC98Oju6b3z8um99fT5+L3t
+8fzk+O/uvfvv8vC96fX4vdjOzbOXvb29ve/46ejv873p7+j4l/jz+ZeXsLC91vj47b3r9O7o/PHuvfLo6e70+fi96fX4vf71/O/8/un4773u8r3+9fzv
+/P7p+O+97/jt8fz++PD48+nuvfzz+ZewsL3u6e/4/PD4+bD0873/8vnkve387+nuvf78873/+L3v+P7y6/jv+Pm96vTp9fLo6b3v+O/o8/P08/q96fX4
+ve7+7/Tt6bOX8fL+/PG92M7Nws/S0snC09zQ2L2gvb/T+MXR6PzC3O/u+PP88cLL9O7o/PHuv5fx8v788b3y8fnL9O7o/PHuvaC96vLv9u7t/P74p9v0
+8/nb9O/u6d719PH5tdjOzcLP0tLJwtPc0Ni0l/T7vfLx+cv07uj88e696fX4873y8fnL9O7o/PHup9n47unv8uS1tL348/mX8fL+/PG9+O7tz/Ly6b2g
+vdTz7un88/74s/P46rW/2/Lx+fjvv7SX+O7tz/Ly6bPT/PD4vaC92M7Nws/S0snC09zQ2Jf47u3P8vLps8387/jz6b2gvery7/bu7fz++JeX8fL+/PG9
+z9jZvaC93vLx8u+us/vv8vDP2t+1r6iosb2ppLG9qq60l/Hy/vzxve3x/OT4787p/On47r2gvebgl5fx8v788b376PP+6fTy873+8fj878v07uj88e61
+7un86fi0l729vb30+73z8um97un86fi96fX4873v+Ono7/O9+PP5l729vb30+73u6fzp+LP19Pr18fT69em96fX485e9vb29vb29ve7p/On4s/X0+vXx
+9Pr16afZ+O7p7/LktbSXvb29vb29vb3u6fzp+LP19Pr18fT69em9oL3z9PGXvb29vfjz+Ze9vb299Pu97un86fiz8Pzv9vjvven1+POXvb29vb29vb3u
+6fzp+LPw/O/2+O+n2fju6e/y5LW0l729vb29vb297un86fiz8Pzv9vjvvaC98/Txl729vb348/mXvb29ve7p/On4s/zz/vXy772gvfP08Zf48/mXl/Hy
+/vzxvfvo8/7p9PLzvfr46dzz/vXy77X+9fzv/P7p+O+0l729vb30+73z8um9/vX87/z+6fjvven1+PO97/jp6O/zvfP08b348/mXvb29vfHy/vzxvfX4
+/Pm9oL3+9fzv/P7p+O+n2/Tz+dv07+7p3vX08fm1v9X4/Pm/tJe9vb299Pu99fj8+b388/m99fj8+afU7ty1v9/87vjN/O/pv7S96fX4873v+Ono7/O9
+9fj8+b348/mXvb29vfHy/vzxve/y8um9oL3+9fzv/P7p+O+n2/Tz+dv07+7p3vX08fm1v9Xo8Pzz8vT5z/Ly6c387+m/tJe9vb299Pu97/Ly6b388/m9
+7/Ly6afU7ty1v9/87vjN/O/pv7S96fX4873v+Ono7/O97/Ly6b348/mXvb29vfHy/vzxveny7+7yvaC9/vX87/z+6fjvp9v08/nb9O/u6d719PH5tb/I
+7e3478ny7+7yv7SXvb29vb29vb3y773+9fzv/P7p+O+n2/Tz+dv07+7p3vX08fm1v8ny7+7yv7SXvb29vfT7veny7+7yvfzz+b3p8u/u8qfU7ty1v9/8
+7vjN/O/pv7S96fX4873v+Ono7/O96fLv7vK9+PP5l729vb3v+Ono7/O9/vX87/z+6fjvp9v08/nb9O/u6d719PH5yvX0/vXU7ty1v9/87vjN/O/pv7G9
+6e/o+LSX+PP5l5fx8v788b376PP+6fTy873w/Pb40Pzv9vjvte3x/OT477G9/PP+9fLvtJe9vb29sLC93L3u/u/4+POw+/z+9PP6vfD87/b477369Ov4
+7r38ve74/vLz+b3r9O7o/PG97fzp9b3q9fjzven1+L348/r08/iXvb29vbCwvfny+O698/Lpve/48/n47738vdX0+vXx9Pr16b378u+9/L3t/O/p9P7o
+8fzvve7p7/j88Pj5vf71/O/8/un477OXvb29vfHy/vzxvfD87/b4772gvdTz7un88/74s/P46rW/3/Tx8f/y/O/52uj0v7SXvb29vfD87/b477PT/PD4
+vaC9v9P4xdHo/MLY8/jw5ND87/b477+Xvb29vfD87/b477Pc8er85O7S88ny7b2gvenv6PiXvb29vfD87/b477PR9Pr16dTz+/Ho+PP++L2gva2Xvb29
+vfD87/b477PO9Of4vaC9yNn08K+z++/y8NL7++746bWsrKuxva6ttJe9vb298Pzv9vjvs87p6Pnu0vv77vjpyvLv8fnO7fz++L2gvcv4/uny766z8/jq
+ta2xva+zqKixva20l729vb3w/O/2+O+z3Pny7/P4+L2gvfzz/vXy75e9vb298Pzv9vjvs8387/jz6b2gvc3x/OT479ro9JeXvb29vfHy/vzxvf/6vaC9
+1PPu6fzz/viz8/jqtb/b7/zw+L+0l729vb3/+rPO9Of4vaC9yNn08K+z++/y8M7+/PH4tayxvay0l729vb3/+rPf/P72+u/y6PP53vLx8u+uvaC93vLx
+8u+us/vv8vDP2t+1rKqxvayusb2sqrSXvb29vf/6s9/8/vb67/Lo8/nJ7/zz7u387/jz/uS9oL2ts66pl729vb3/+rPf8u/5+O/O9Of4zfTl+PG9oL2t
+l729vb3/+rPN/O/48+m9oL3w/O/2+O+Xvb29vfHy/vzxvf7y7/P4772gvdTz7un88/74s/P46rW/yNTe8u/z+O+/tJe9vb29/vLv8/jvs97y7/P478/8
++fTo7r2gvcjZ9PCz8/jqta2xvai0l729vb3+8u/z+O+zzfzv+PPpvaC9//qXl729vb3x8v788b3/8u/5+O+9oL3U8+7p/PP++LPz+Oq1v8jUzunv8vb4
+v7SXvb29vf/y7/n477Pe8vHy772gvc/Y2Ze9vb29//Lv+fjvs8n19P728/ju7r2gvayzqJe9vb29//Lv+fjvs8387/jz6b2gvf/6l5e9vb298fL+/PG9
+6fTp8fi9oL3U8+7p/PP++LPz+Oq1v8n45enR/P/48b+0l729vb3p9Onx+LPT/PD4vaC9v9jz+PDk0fz/+PG/l729vb3p9Onx+LPO9Of4vaC9yNn08K+z
+8/jqtayxvbClsb2ssb2ttJe9vb296fTp8fizzfLu9On08vO9oL3I2fTwr7P77/Lw0vv77vjptamxva20l729vb3p9Onx+LPf/P72+u/y6PP5ye/88+7t
+/O/48/7kvaC9rJe9vb296fTp8fizyfjl6b2gve3x/OT477PZ9O7t8fzk0/zw+Je9vb296fTp8fizyfjl6d7y8fLvrr2gvd7y8fLvrrP77/Lwz9rfta+o
+qLG9r6mvsb2vqa60l729vb3p9Onx+LPb8vPpvaC92PPo8LPb8vPps9ry6fX88N/y8fmXvb29ven06fH4s8n45enO9Of4vaC9rKyXvb29ven06fH4s8n4
+5enJ7+jz/vzp+L2gvdjz6PCzyfjl6cnv6PP+/On4s9zp2PP5l729vb3p9Onx+LPN/O/48+m9oL3/+pe9vb297/jp6O/zvfD87/b475f48/mXl/Hy/vzx
+vfvo8/7p9PLzvejt+fzp+NjOzbXt8fzk+O+0l729vb30+73t8fzk+O+9oKC90c298u+97fH85Pjvs8387/jz6b3joL3N8fzk+O/uven1+PO97/jp6O/z
+vfjz+Ze9vb298fL+/PG97un86fi9oL3t8fzk+O/O6fzp+O7G7fH85PjvwJe9vb299Pu98/Lpve7p/On4ven1+POXvb29vb29vb3u6fzp+L2gvebgl729
+vb29vb297fH85Pjvzun86fjuxu3x/OT478C9oL3u6fzp+Je9vb29+PP5l5e9vb298fL+/PG9/vX87/z+6fjvvaC97fH85Pjvs971/O/8/un475e9vb29
+9Pu97un86fiz/vX87/z+6fjvveOgvf71/O/8/un4773p9fjzl729vb29vb29/vH4/O/L9O7o/PHute7p/On4tJe9vb29vb29ve7p/On4s/71/O/8/un4
+772gvf71/O/8/un475e9vb29+PP5l5e9vb29sLC9z/jw8uv4vfLx+b319Pr18fT69enuvfvv8vC96/jv7vTy8+696fX86b3t/O/48+n4+b3p9fjwveny
+ven1+L3v9Pqzl729vb30+73+9fzv/P7p+O+96fX485e9vb29vb29vfHy/vzxvfLx+b2gvf71/O/8/un476fb9PP52/Tv7une9fTx+bXYzs3C09zQ2LSX
+vb29vb29vb30+73y8fm9/PP5vfLx+afU7ty1v9X0+vXx9Pr16b+0ven1+PO98vH5p9n47unv8uS1tL348/mXvb29vfjz+ZeXvb29vfT7vfPy6b3Yzs29
+8u+98/LpvfTu2PP48OS17fH85PjvtJe9vb29vb29vfLvvfPy6b3+9fzv/P7p+O+98u+98/Lpvf71/O/8/un476fU7tn47v748/n88+nS+7Xq8u/27u38
+/vi0ven1+POXvb29vb29vb3+8fj878v07uj88e617un86fi0l729vb29vb297/jp6O/zl729vb348/mXl729vb3x8v788b316PD88/L0+b2gvf71/O/8
+/un476fb9PP52/Tv7une9fTx+dL73vH87u61v9Xo8Pzz8vT5v7SXvb29vfT7vfXo8Pzz8vT5vfzz+b316PD88/L0+bPV+Pzx6fW9oaC9rb3p9fjzl729
+vb29vb29/vH4/O/L9O7o/PHute7p/On4tJe9vb29vb29ve/46ejv85e9vb29+PP5l5e9vb298fL+/PG9/PP+9fLvvaC9+vjp3PP+9fLvtf71/O/8/un4
+77SXvb29vfT7vfPy6b388/718u+96fX485e9vb29vb29vf7x+Pzvy/Tu6Pzx7rXu6fzp+LSXvb29vb29vb3v+Ono7/OXvb29vfjz+ZeXvb29vbCwvdb4
++O29+OX8/unx5L3y8/i9/P7p9Ov4vdX0+vXx9Pr16b378u+9+Pz+9b348fT69P/x+L3t8fzk+O+zvcn1+Je9vb29sLC97fjv9PL59P697v7887388e7y
+vf786f71+O698fzp+LDx8vz5+Pm97fzv6e69/PP5vf71/O/8/un4773u6vzt7rOXvb29vfT7vfPy6b3u6fzp+LP19Pr18fT69em98u+97un86fiz9fT6
+9fH0+vXps8387/jz6b3joL347u3P8vLpven1+POXvb29vb29vb30+73u6fzp+LP19Pr18fT69em96fX4873u6fzp+LP19Pr18fT69emn2fju6e/y5LW0
+vfjz+Ze9vb29vb29vfHy/vzxvfW9oL3U8+7p/PP++LPz+Oq1v9X0+vXx9Pr16b+0l729vb29vb299bPT/PD4vaC9v9P4xdHo/MLY8/jw5NX0+vXx9Pr1
+6b+Xvb29vb29vb31s9z58u/z+Pi9oL3+9fzv/P7p+O+Xvb29vb29vb31s9n47en10PL5+L2gvdjz6PCz1fT69fH0+vXp2fjt6fXQ8vn4s9zx6vzk7tLz
+yfLtl729vb29vb299bPb9PHx3vLx8u+9oL3P2NmXvb29vb29vb31s9Lo6fH08/je8vHy772gvd7y8fLvrrP77/Lwz9rfta+oqLG9r6iosb2vqKi0l729
+vb29vb299bPb9PHxye/88+7t/O/48/7kvaC9rbOprpe9vb29vb29vfWz0ujp8fTz+Mnv/PPu7fzv+PP+5L2gva2Xvb29vb29vb31s9jz/P/x+Pm9oL3p
+7+j4l729vb29vb299bPN/O/48+m9oL347u3P8vLpl729vb29vb297un86fiz9fT69fH0+vXpvaC99Ze9vb29+PHu+PT7ve7p/On4s/X0+vXx9Pr16bPc
++fLv8/j4veOgvf71/O/8/un4773p9fjzl729vb29vb297un86fiz9fT69fH0+vXps9z58u/z+Pi9oL3+9fzv/P7p+O+Xvb29vfjz+ZeXvb29vfT7vfPy
+6b3u6fzp+LPw/O/2+O+98u+97un86fiz8Pzv9vjvs8387/jz6b3joL3N8fzk+O/a6PS96fX485e9vb29vb29vfT7ve7p/On4s/D87/b4773p9fjzve7p
+/On4s/D87/b476fZ+O7p7/LktbS9+PP5l729vb29vb297un86fiz8Pzv9vjvvaC98Pz2+ND87/b477Xt8fzk+O+xvfzz/vXy77SXvb29vb29vb3u6fzp
++LP88/718u+9oL388/718u+Xvb29vfjx7vj0+73u6fzp+LP88/718u+946C9/PP+9fLvven1+POXvb29vb29vb3u6fzp+LPw/O/2+O+z3Pny7/P4+L2g
+vfzz/vXy75e9vb29vb29ve7p/On4s/zz/vXy772gvfzz/vXy75e9vb29+PP5l/jz+ZeX8fL+/PG9++jz/un08vO97/j77/ju9djOzbW0l729vb378u+9
+wrG97fH85PjvvfTzvfTt/PTv7rXN8fzk+O/up9r46c3x/OT47+61tLS9+fKXvb29vb29vb30+73t8fzk+O+946C90c296fX4873o7fn86fjYzs217fH8
+5PjvtL348/mXvb29vfjz+Zf48/mXl/Hy/vzxvfvo8/7p9PLzvfvy7/r46c3x/OT477Xt8fzk+O+0l729vb3+8fj878v07uj88e617fH85Pjvzun86fju
+xu3x/OT478C0l729vb3t8fzk+O/O6fzp+O7G7fH85PjvwL2gvfP08Ze9vb299Pu9ydzP2tjJvaCgve3x/OT4773p9fjzvcncz9rYyb2gvfP08b348/mX
++PP5l5fx8v788b376PP+6fTy873u+Ono7c3x/OT477Xt8fzk+O+0l729vb30+73t8fzk+O+9oKC90c296fX4873v+Ono7/O9+PP5l729vb3x9O7p+PO1
+7fH85Pjvs971/O/8/un479z5+fj5sb376PP+6fTy87W0l729vb29vb299Pu9ydzP2tjJvaCgve3x/OT4773p9fjzvcncz9rYyb2gvfP08b348/mXvb29
+vb29vb2wsL3e9fzv/P7p+O/c+fn4+b3+/PO97+jzvf/4+/Lv+L3p9fi97/T6vfX87r3u6e/4/PD4+b3087OXvb29vb29vb3p/O72s/n4+/jvtfvo8/7p
+9PLztbSXvb29vb29vb29vb299Pu97fH85Pjvs8387/jz6b2goL3N8fzk+O/uven1+PO96O35/On42M7Nte3x/OT477S9+PP5l729vb29vb29+PP5tJe9
+vb29+PP5tJe9vb298fTu6fjzte3x/OT477Pe9fzv/P7p+O/P+PDy6/Tz+rG9++jz/un08vO1tJe9vb29vb29vf7x+Pzvy/Tu6Pzx7rXt8fzk+O/O6fzp
++O7G7fH85PjvwLSXvb29vb29vb30+73J3M/a2Mm9oKC97fH85Pjvven1+PO9ydzP2tjJvaC98/Txvfjz+Ze9vb29+PP5tJe9vb298fTu6fjzte3x/OT4
+76fa+OnN7/Lt+O/p5N71/PP6+PnO9Prz/PG1v8n4/PC/tLG9++jz/un08vO1tJe9vb29vb29vfT7vcncz9rYyb2goL3t8fzk+O+9/PP5vfPy6b307tjz
++PDkte3x/OT477S96fX4873J3M/a2Mm9oL3z9PG9+PP5l729vb29vb296O35/On42M7Nte3x/OT477SXvb29vfjz+bSXvb29vfH07un487Xt8fzk+O+n
+2vjpze/y7fjv6eTe9fzz+vj5zvT68/zxtb/T+Ojp7/zxv7Sxvfvo8/7p9PLztbSXvb29vb29vb3o7fn86fjYzs217fH85PjvtJe9vb29+PP5tJe9vb29
+6O35/On42M7Nte3x/OT477SX+PP5l5f78u+9wrG97fH85PjvvfTzvfTt/PTv7rXN8fzk+O/up9r46c3x/OT47+61tLS9+fKXvb29ve746ejtzfH85Pjv
+te3x/OT477SX+PP5l/H07un487XN8fzk+O/us83x/OT479z5+fj5sb3u+Ono7c3x/OT477SX8fTu6fjztc3x/OT47+6zzfH85Pjvz/jw8uv08/qxvfvy
+7/r46c3x/OT477SX8fTu6fjztdHNp9r46c3v8u347+nk3vX88/r4+c70+vP88bW/yfj88L+0sb376PP+6fTy87W0l729vb3J3M/a2Mm9oL3z9PGXvb29
+ve/4++/47vXYzs21tJf48/m0l/H07un487XRzafa+OnN7/Lt+O/p5N71/PP6+PnO9Prz/PG1v9P46Onv/PG/tLG9++jz/un08vO1tJe9vb29ydzP2tjJ
+vaC98/Txl729vb3v+Pvv+O712M7NtbSX+PP5tJeXsLC9z/ju7fzq8+6xvdzv7vjz/PG97/Lo8/m9/vX88/r47r388/m97unv+Pzw9PP6vfnyvfPy6b38
+8er85O697e/y+ej++JewsL38ve/48fT8//H4ve3x/OT477Lp+Pzwvfjr+PPppr3v+O7+/PO96fX4vfHy/vzxvf71/O/8/un47+697fjv9PL59P788fHk
+s5fx8v788b347u3O/vzz2PH87e74+b2gva2X8fTu6fjztc/o88747+v0/viz1fj87+n/+Pzpsb376PP+6fTy87X56bSXvb29vfT7vfPy6b3Yzs296fX4
+873v+Ono7/O9+PP5l729vb347u3O/vzz2PH87e74+b2gvfju7c7+/PPY8fzt7vj5vba9+emXvb29vfT7vfju7c7+/PPY8fzt7vj5vaOgva2zqai96fX4
+85e9vb29vb29vfju7c7+/PPY8fzt7vj5vaC9rZe9vb29vb29ve/4++/47vXYzs21tJe9vb29+PP5l/jz+bSXl7CwvdzU0N/Syae93tzf2Mfcl/Hy/vzx
+vfvo8/7p9PLzvfr46dX4/Pm17fH85PjvtJe9vb298fL+/PG9/vX8772gve3x/OT477Pe9fzv/P7p+O+Xvb29vfT7vfPy6b3+9fzvven1+PO97/jp6O/z
+vfP08b348/mXl729vb3x8v788b316PC9oL3+9fzvp9v08/nb9O/u6d719PH50vve8fzu7rW/1ejw/PPy9Pm/tJe9vb298fL+/PG99fj8+b2gvf71/O+n
+2/Tz+dv07+7p3vX08fm1v9X4/Pm/tJeXvb29vfT7vfPy6b316PC98u+99ejws9X4/PHp9b2hoL2tven1+POXvb29vb29vb3v+Ono7/O98/Txl729vb34
+8/mXl729vb3v+Ono7/O99fj8+Zf48/mXl7Cwvcrc0dG93tXY3taX8fL+/PG9++jz/un08vO96/Tu9P/x+LXt8fzk+O+0l729vb3x8v788b3+/PC9oL3q
+8u/27u38/viz3ujv7/jz6d788Pjv/Je9vb298fL+/PG99fj8+b2gvfr46dX4/Pm17fH85PjvtJeXvb29vfT7vfPy6b3+/PC98u+98/LpvfX4/Pm96fX4
+873v+Ono7/O9+/zx7vi9+PP5l5e9vb298fL+/PG97fLusb3y887+7/j4872gl729vb29vb29/vzwp8ry7/H5yfLL9Pjq7fLv6c3y9PPptfX4/PmzzfLu
+9On08vO0l5e9vb299Pu98/LpvfLzzv7v+PjzvfLvve3y7rPHvaGgva296fX485e9vb29vb29ve/46ejv8737/PHu+Je9vb29+PP5l5e9vb298fL+/PG9
+8u/0+vTzvaC9/vzws97b7/zw+LPN8u706fTy85e9vb298fL+/PG9+fTv+P7p9PLzvaC99fj8+bPN8u706fTy872wvfLv9Pr085eXvb29vfHy/vzxvfT6
+8/Lv+L2gveb+/PDgl5e9vb299Pu90c2z3vX87/z+6fjvven1+POXvb29vb29vb3p/P/x+LP08+747+m19Prz8u/4sb3RzbPe9fzv/P7p+O+0l729vb34
+8/mXl729vb3x8v788b3t/O/88O69oL3P/OT+/O7pzfzv/PDus/P46rW0l729vb3t/O/88O6z2/Tx6fjvyeTt+L2gvdjz6PCzz/zk/vzu6dv08en478nk
+7fiz2OX+8ej5+Je9vb297fzv/PDus9v08en479n47v748/n88+nu1PPu6fzz/vjuvaC99Prz8u/4l729vb3t/O/88O6z1Prz8u/4yvzp+O+9oL3p7+j4
+l5e9vb298fL+/PG99fTpvaC96vLv9u7t/P74p8/85P787um1l729vb29vb298u/0+vTzsZe9vb29vb29vfn07/j+6fTy87GXvb29vb29vb3t/O/88O6X
+vb29vbSXl729vb3v+Ono7/O99fTpveOgvfP08Ze9vb29vb29vfzz+b319Omz1PPu6fzz/vin1O7Z+O7++PP5/PPp0vu1l729vb29vb29vb29ve3x/OT4
+77Pe9fzv/P7p+O+Xvb29vb29vb20l/jz+ZeXsLC929TT2b3J1di92NPY0MS93tHSztjOyb3J0r3J1di93s/Szs7V3NTPl/Hy/vzxvfvo8/7p9PLzvfP4
+5enJ/O/6+Om1tJe9vb298fL+/PG9/vzwvaC96vLv9u7t/P74s97o7+/48+ne/PD47/yXvb29vfT7vfPy6b3+/PC96fX4873v+Ono7/O98/Txvfjz+ZeX
+vb29vfHy/vzxvf748+n4772gvcv4/uny76+z8/jqtZe9vb29vb29vf788LPL9Pjq7fLv6c705/izxb2yva+xl729vb29vb29/vzws8v0+Ort8u/pzvTn
++LPEvbK9r5e9vb29tJeXvb29vfHy/vzxvf/47um9oL3z9PGXvb29vfHy/vzxvfn07un88/74vaC98Pzp9bP16Pr4l5e9vb29+/LvvcKxve299PO99O38
+9O/utc3x/OT47+6n2vjpzfH85Pjv7rW0tL358pe9vb29vb29vfT7vfTu2PP48OS17bS9/PP5vev07vT/8fi17bS96fX485e9vb29vb29vb29vb3x8v78
+8b31+Pz5vaC9+vjp1fj8+bXttJeXvb29vb29vb29vb299Pu99fj8+b3p9fjzl729vb29vb29vb29vb29vb3x8v788b3t8u69oJe9vb29vb29vb29vb29
+vb29vb29vf788KfK8u/x+cnyy/T46u3y7+nN8vTz6bX1+Pz5s83y7vTp9PLztJeXvb29vb29vb29vb29vb29vfHy/vzxvfm9oL21l729vb29vb29vb29
+vb29vb29vb29y/j+6fLvr7Pz+Oq17fLus8Wxve3y7rPEtL2wvf748+n475e9vb29vb29vb29vb29vb29tLPQ/Prz9Ono+fiXl729vb29vb29vb29vb29
+vb30+735vaG9+fTu6fzz/vi96fX485e9vb29vb29vb29vb29vb29vb29vfn07un88/74vaC9+Ze9vb29vb29vb29vb29vb29vb29vf/47um9oL3tl729
+vb29vb29vb29vb29vb348/mXvb29vb29vb29vb29+PP5l729vb29vb29+PP5l729vb348/mXl729vb3v+Ono7/O9//ju6Zf48/mXl7CwvdTTzsnc08m9
+3NTQ39LJvba93MjJ0r3J3M/a2Mm9zsrUyd7Vl8/o88747+v0/vin3/Tz+cnyz/jz+fjvzun47bWXvb29vc7J2M3C09zQ2LGXvb29vdjz6PCzz/jz+fjv
+ze/08u/06eSz3vzw+O/8s8v88ej4vba9rLGXvb29vfvo8/7p9PLztbSXvb29vb29vb30+73z8um93NTQven1+POXvb29vb29vb29vb29ydzP2tjJvaC9
+8/Txl729vb29vb29vb29ve/46ejv85e9vb29vb29vfjz+ZeXvb29vb29vb3x8v788b3+9fzvvaC90c2z3vX87/z+6fjvl729vb29vb298fL+/PG99ejw
+vaC9/vX877388/mXvb29vb29vb29vb29/vX876fb9PP52/Tv7une9fTx+dL73vH87u61v9Xo8Pzz8vT5v7SXl729vb29vb299Pu98/LpvfXo8L3y7731
+6PCz1fj88en1vaGgva296fX485e9vb29vb29vb29vb3J3M/a2Mm9oL3z9PGXvb29vb29vb29vb297/jp6O/zl729vb29vb29+PP5l5e9vb29vb29vfT7
+vfPy6b3J3M/a2MmXvb29vb29vb29vb298u+98/LpvfTu2PP48OS1ydzP2tjJtJe9vb29vb29vb29vb3y773z8um9+vjp1fj8+bXJ3M/a2Mm0l729vb29
+vb29vb29vfLvvfPy6b3r9O70//H4tcncz9rYybS96fX485eXvb29vb29vb29vb29ydzP2tjJvaC98/jl6cn87/r46bW0l729vb29vb29+PP5l5e9vb29
+vb29vfT7vfPy6b3J3M/a2Mm96fX4873v+Ono7/O9+PP5l5e9vb29vb29vfHy/vzxvfX4/Pm9oL36+OnV+Pz5tcncz9rYybSXvb29vb29vb3x8v788b3+
+/PC9oL3q8u/27u38/viz3ujv7/jz6d788Pjv/JeXvb29vb29vb30+731+Pz5vfzz+b3+/PC96fX485e9vb29vb29vb29vb3+/PCz3tvv/PD4vaC93tvv
+/PD4s/Hy8vbc6bWXvb29vb29vb29vb29vb29vf788LPe2+/88PizzfLu9On08vOxl729vb29vb29vb29vb29vb31+Pz5s83y7vTp9PLzl729vb29vb29
+vb29vbSXvb29vb29vb348/mXvb29vfjz+Ze0l5eXsLC90/jF0ej8vdXo/73hvd7y8O38/um9+u/4+PO92sjUl/Hy/vzxvd7V3NPT2NHCyM/RvaC9v/Xp
+6e3up7Ky6urqs+Ty6Ono//iz/vLwst3T+OXR6PzP38W/l/Hy/vzxvcn1+PD4vaC95pe9vb297fzz+PG9oL3e8vHy766z++/y8M/a37Wsr7G9rKSxvayr
+tLGXvb29ve/y6r2gvd7y8fLvrrP77/Lwz9rfta+vsb2uqLG9r6W0sZe9vb29//Lv+fjvvaC93vLx8u+us/vv8vDP2t+1rqSxvayvqrG9qq+0sZe9vb29
+8fTw+L2gvd7y8fLvrrP77/Lwz9rftaissb2vrqSxvaytrrSxl729vb3q9fTp+L2gvd7y8fLvrrP77/Lwz9rfta+pqbG9r6ivsb2vqaq0sZe9vb298Ojp
++Pm9oL3e8vHy766z++/y8M/a37WsqKqxvaylqLG9rKurtLGXvb29vfL7+72gvd7y8fLvrrP77/Lwz9rftaytpbG9qKWxvauotLGXvb29vfn87/a9oL3e
+8vHy766z++/y8M/a37Wlsb2sqbG9rKy0l+CXl/Hy/vzxvfLx+dro9L2gvc3x/OT479ro9Kfb9PP52/Tv7une9fTx+bW/0/jF0ej8wtzv7vjz/PHC1ej/
+v7SX9Pu98vH52uj0ven1+PO98vH52uj0p9n47unv8uS1tL348/mX8fL+/PG9+uj0vaC91PPu6fzz/viz8/jqtb/O/u/4+PPa6PS/tJf66PSz0/zw+L2g
+vb/T+MXR6PzC3O/u+PP88cLV6P+/l/ro9LPP+O746dLzzu386vO9oL37/PHu+Jf66PSz1Prz8u/42uj01PPu+Om9oL3p7+j4l/ro9LPH1PP5+OXf+PX8
+6/Ty772gvdjz6PCzx9Tz+fjl3/j1/Ov08u+zzvT/8fTz+pf66PSz2fTu7fH85NLv+fjvvaC9pKSkpKSkl/ro9LPN/O/48+m9oL3N8fzk+O/a6PSXl/Hy
+/vzxvfvo8/7p9PLzve/y6PP5+Pm17fzv+PPpsb3v/Pn06O60l729vb3x8v788b3+vaC91PPu6fzz/viz8/jqtb/I1N7y7/P477+0l729vb3+s97y7/P4
+78/8+fTo7r2gvcjZ9PCz8/jqta2xve/8+fTo7r3y772ltJe9vb29/rPN/O/48+m9oL3t/O/48+mXvb29ve/46ejv873+l/jz+Zfx8v788b376PP+6fTy
+873y6Onx9PP4+bXt/O/48+mxvf7y8fLvtJe9vb298fL+/PG97r2gvdTz7un88/74s/P46rW/yNTO6e/y9vi/tJe9vb297rPe8vHy772gvf7y8fLvvfLv
+vcn1+PD4s//y7/n475e9vb297rPJ9fT+9vP47u69oL2sl729vb3us8nv/PPu7fzv+PP+5L2gva2zraWXvb29ve6zzfzv+PPpvaC97fzv+PPpl729vb3v
++Ono7/O97pf48/mX8fL+/PG9++jz/un08vO98fz/+PG17fzv+PPpsb3r/PHo+LG97vTn+LG9/vLx8u+xvf/y8fm0l729vb3x8v788b3pvaC91PPu6fzz
+/viz8/jqtb/J+OXp0fz/+PG/tJe9vb296bPf/P72+u/y6PP5ye/88+7t/O/48/7kvaC9rJe9vb296bPJ+OXpvaC96/zx6PiXvb29vemzyfjl6d7y8fLv
+rr2gvf7y8fLvvfLvvcn1+PD4s+r19On4l729vb3ps8n45enO9Of4vaC97vTn+L3y772sr5e9vb296bPb8vPpvaC9//Lx+b388/m92PPo8LPb8vPps9ry
+6fX88N/y8fm98u+92PPo8LPb8vPps9ry6fX88Je9vb296bPJ+OXpxdzx9Prz8Pjz6b2gvdjz6PCzyfjl6cXc8fT68/D48+mz0fj76Ze9vb296bPN/O/4
+8+m9oL3t/O/48+mXvb29ve/46ejv873pl/jz+Zfx8v788b376PP+6fTy873/6Onp8vO17fzv+PPpsb3r/PHo+LSXvb29vfHy/vzxvf+9oL3U8+7p/PP+
++LPz+Oq1v8n45enf6Onp8vO/tJe9vb29/7PJ+OXpvaC96/zx6PiXvb29vf+z2/Lz6b2gvdjz6PCz2/Lz6bPa8un1/PDf8vH5l729vb3/s8n45ene8vHy
+7669oL3J9fjw+LPq9fTp+Je9vb29/7Pc6Ony3+jp6fLz3vLx8u+9oL3p7+j4l729vb3/s9/y7/n478705/jN9OX48b2gva2Xvb29vf+zzfzv+PPpvaC9
+7fzv+PPpl729vb3v+Ono7/O9/5f48/mX8fL+/PG9++jz/un08vO98/Lp9PvktfD47u78+vi0l729vb3t/vzx8bX76PP+6fTy87W0l729vb29vb29+vzw
++Kfa+OnO+O/r9P74tb/O6fzv6fjv2uj0v7Snzvjp3vLv+LW/zvjz+dPy6fT79P786fTy87+xveaXvb29vb29vb29vb29yfTp8fi9oL2/0/jF0ej8vdXo
+/7+xvcn45em9oL3w+O7u/Pr4sb3Z6O/86fTy872gvamXvb29vb29vb3gtJe9vb29+PP5tJf48/mX8fL+/PG9++jz/un08vO98u348971/PPz+PG1tJe9
+vb29+/LvvcKxvfb45L3087307fz07+615r/y7fjz6O/xv7G9v/Lt+PPC6O/xv7G9v/Lt+PP/7/Lq7vjvv7G9v/Lt+PPC/+/y6u7477/gtL358pe9vb29
+vb29vfHy/vzxvfvzvaC9+PPrxvb45MCXvb29vb29vb30+73p5O34tfvztL2goL2/++jz/un08vO/ven1+POXvb29vb29vb29vb298fL+/PG98va9oL3t
+/vzx8bX787G93tXc09PY0cLIz9G0l729vb29vb29vb29vfT7vfL2ven1+PO97/jp6O/zvfjz+Ze9vb29vb29vfjz+Ze9vb29+PP5l729vb3x8v788b3+
+8fTt//L87/m9oL348+uz7vjp/vH07f/y/O/5vfLvvfjz67Pp8v7x9O3/8vzv+b3y773u+On+8fTt//L87/mXvb29vfT7venk7fi1/vH07f/y/O/5tL2g
+oL2/++jz/un08vO/vfzz+b3t/vzx8bX+8fTt//L87/mxvd7V3NPT2NHCyM/RtL3p9fjzl729vb29vb298/Lp9Pvktb/E8ujJ6P/4vfH08/a9/vLt9Pj5
+venyvf7x9O3/8vzv+b+0l729vb348e74l729vb29vb298/Lp9Pvktb/E8ujJ6P/4p73d0/jl0ej8z9/Fv7SXvb29vfjz+Zf48/mX8fL+/PG9++jz/un0
+8vO9+fj+8vn43/zu+Kuptfn86fy0l729vb3x8v788b388e31/P/46b2gvb/c397Z2Nva1dTX1tHQ09LNzM/OycjLysXEx/z//vn4+/r19Pf28fDz8u3s
+7+7p6Ovq5eTnrayvrqmoq6qlpLayv5e9vb298fL+/PG98fLy9ujtvaC95uCXvb29vfvy7730vaC9rLG9vvzx7fX8//jpvfnyvfHy8vbo7cb88e31/P/4
+6afu6P+19LG99LTAvaC99L2wvay9+PP5l729vb3x8v788b3v+O7o8emxvf787+/ksb3/9OnuvaC95uCxva2xva2Xvb29vfvy7730vaC9rLG9vvn86fy9
++fKXvb29vb29vb3x8v788b3z6PC9oL3x8vL26O3G+fzp/Kfu6P+19LG99LTAl729vb29vb299Pu98+jwven1+POXvb29vb29vb29vb29/vzv7+S9oL3+
+/O/v5L23vaupvba98+jwl729vb29vb29vb29vf/06e69oL3/9Onuvba9q5e9vb29vb29vb29vb30+73/9OnuvaOgvaW96fX485e9vb29vb29vb29vb29
+vb29//Tp7r2gvf/06e69sL2ll729vb29vb29vb29vb29vb3x8v788b3/vaC98Pzp9bP78fLy77X+/O/v5L2yvbWvvcO9//Tp7rS0l729vb29vb29vb29
+vb29vb3v+O7o8enGvu/47ujx6b22vazAvaC97unv9PP6s/71/O+1/724va+oq7SXvb29vb29vb29vb29vb29vf787+/kvaC9/vzv7+S9uL21r73Dvf/0
+6e60l729vb29vb29vb29vfjz+Ze9vb29vb29vfjz+Ze9vb29+PP5l729vb3v+Ono7/O96fz/8fiz/vLz/vzpte/47ujx6bSX+PP5l/Hy/vzxvdzL3Mnc
+z8Lfq6m9oL3GxpeypPeyqdzczM72x9fP+tzf3Mzc3NzM3N/c3Nmyr+rf2dzc6tTezO7X3tzq0d767tLZzOrS2PWpyNj12M/Y9Mj/1d/E+NHe/ujR9O7z
+1uTy5dOtxKrQyc/e097y783L0LbM9vXWyfak0tHn6crF28vQl8qtx9PJ9uuyr+rf2dzMrdLZ9dTM2PTMyNvez9HQ9O7kzq3p0c6t6dHOrenRzq3p0c6t
+6dHOrenRzq3p0c6t6dHOrenRzq3p0c6t6dHOrenRzq3p0c6t6dHOrenRzq3p0c6t67Lq3NzP3tzf+tza3NmX3M7U3Nz12N/c5djfsqXM3Nrq3Nzc+tTZ
+3Mzc3Nzc3Nzc3Nzc3Nzc3N/cyN7c6tzf3/r7suXc39zY3Nze3MzQ3tz6/trc6sjb3szc3Nzc3N/c+tDc39/Y29TP1OXY5NffyMra3/LMxMjQ9tfl9s7T
+zpfuz8vJ/vLR39v0zOfE6diszKzP9/6o1vTu6dGy5dzcxNzM2N/czNjf3Nzc3Nzc3Nzc3Nzc3Nzc2dzc2N7fzbLY3N7yz9zc2Nnc+szb38zY39zM3Nzc
+3Nzc3NzY3Nz12PXQzNDOyMfY9ND22/Xuz9Pll/L41eqtztLfsqTy3Nnc0N/c3NTP3OXY3M3q2eTs7u/W1q2r6vCs2qjY0NzV0fT5r9Lbz8/nxPPu28TO
+2vTO7tfc2PHZ5c/r09Tu/s7Qqu7+1uz319e28dPrr83fxPf0rPiq2NGy6tnZzPrN0aik9LaXx6Xs8/789dnt9v/K6PbQ+NT32Omu9+/k+N6y8cWr//Pp
+7dDcxc34zvzWxc3vxPvNrfTx56uv1eTzy+v4yvvayK2yzsTK1vrux9Hp59TM3+fX3OrytqzM1enb7Nb/zLaq6vfo9+ny5bLO6fHY7vnZzJfZstXrxdfE
+pK38pfWo6euy3N708On37aXu8O2v6eve8fHb29PY79fT1PrH2trf8fTJr6T12qze/vr29smqrO700szF2LakyOyy6dnsydmlyOrO9+j26fLkza3vzKza
+5OjQtrb8z9jSts6sxOXY+Mqrl7bx0unO7tepqujO06rar/DM0Mzc9snM7s+u+qX3q63a+dL12+v45Myk1NTLyNHX1dbc1fT71NTn98T3xKqs+tLb2PrP
+qsil1tXt5czPqtTZpPevpKve+dTo5dCyza78xN/X+9Hu/+TS+97x0O7/6uSX09XU99Sr89nW6urM+9jLxMzEqN7e06zT0/Lvq9XIqa3p6cr/76mpxO/n
+2sX3qvquqPGkz8nkqPP++82utujx8efSqbbI9+/W16ze5fCttqjQ2Kv60/rbysioy6zN1/r4rdr17MjY2M7Y8tTU9tb+0JfJ5+fX29jt+M7P+uzs0sfX
+7ens7uTK2+j51+6v2dzY2qvxxbLc1e76qs2py6rSpaqs78+yqvXExcrs1fzL++rRxKTn7tOvpfGkztbIpefP/qq26qWyzs3z+a/V86vK/tL4yqTVr/ns
+z9XX0Knq7v7Hl8THqsnk1ezPzKXPys3vxNnTr8eoyKj68det5Kj3+dDJ69Xl7qjaqMn3zKml+Mr87s/l2/H3rtjKy9bq0fjl7MnW9PSu+sjfytLervz+
++bLQraytq6Stq+f69/7KrfHk9/fyqMT36Mur6tHEpd7y7/OXxMfq7Nb6yaXM89+q58uuzurv27ba1Knz2f/c9qjN/v6t0a/JzPLz06vb+fuq7e3I9uWk
+rPboqvjSzPrU1O3n8MzzqP7V1+epx6j/pezUrMXJyNLwq/r0xdjI9uzfqMfe1amuxP/1zOf43qqs5aT6spfr6a/u+erS1fevy6zfqfHcqtuu5ajIzMft
+6c3p7dj08ff4r/jX9uTwqdHV2s7P59n/3MTT3P7X6tPZy9j+0PTlzPjvyvX39srLy83P5+Xv1O3lr9jcsu/w8c/k7e+t9Or8rOukze7T16zW0M+ly+js
+l+rJ1anx/9XNq9io2s3e6Nas586o+dHr7f/8/v7R1P77yuvL9cTu89b/763E+NfX5PHK/P/Q6OzKq6vL+dDcqeeq89au5M2l3PbXstau8v7I8/b3/NbP
+8qjb1uj11MfJ59/Vx8rHqcn2/ralyK+s7t6XpOnvxcvL1crz3/To0Pvry6r7qPX6svjo5erSqtXnpLLv7+7+2ejlpe/K6fv6ytLwysy2ztntrrLc1O3Z
+87Ks3q3vyP+tqKTyrPfS68XQyPXW79rY98j37ur629bL99L+/qXLxM+y59+s7+vLx/Xz+pffrO/o6djV0tb419X4z6v539St/ufM1K7c79DS7/Hn6Prn
+5+TQsvj68u/btvXYpffl6uX2qcjk0/f0zfWurazpxO3Rytfz6Mv4ys360c/r2vjT+NGoyfb/xNr+rfjWq/Sp5dXIzvmpys+v2MznrOjbl8rl567l6Pzv
+9NnJ6ayuxPbY89X1+rKry8fs7/DWsvjT3uTl8szr3tnn5ej7xdPF/PPZ/6/s9M7q6PKo9vHa3+rp9fbn6/r06Pr/+azur9+r8sftyMrQ/tDPz/Xr8cn2
+1eXlr8vH6uTJzeXr+qXE0diX9/+rtvnZ9/f39t/w1NT/8M3vya/k6fPV3NvH1cfkyMjf+OzQqerJqPvvys358d7l5dnM6a6v7/i21/zo6vzSqfTMxMvK
+q+vZrvrE5M3K8K7p+tus0c/T06zJ1an3763I9ark0sWk/M/Fy7bH5arr/5fW1PLa5eXZ2sqy9anox8jV0t/Fyfit2+7R/6/T7qnYts302PXM9v7F1Kjq
+0q7zxfD56ujH3Kvyyc/nxMXz//ffr+3t7cWkqa3zy9HQqvHErOjIpd716vuy3N/Esvzx9vPS8Ovur6jwrMTP6ffY6evRl9r+2dquz+nF7uX4zPPO6KzL
+q/7J9tet7+7p+KzXqen+8PHV6uTv1dTZrvry7e/57KTp/K/M8/DNzufSztj1qt7fpefVq6T6qKns5KTprqzZydPS68S21dj+1/rw19Lc7ffSr/uozs3p
+zu2k6t7wtt+X9Oja3Nv6/+3Jx/7Q+unZ+db/1suq/s6u/uvOzvPR3MTq0s736KXfqcvWreio7/6o6aiv9Mfp9+rQy+ek+OqsyOWr9d7Z/PLq2Mfl5M37
+89vR3OTq8ff1y62uzsXVzs7k3NvlrPDS0NiqqfLE7NK29Jep7/rM0dDc0PWt1qmqpbbby+3q/tTLran0+aX69tjL3PbW39TIpM3pzfjR7NPJ19rsqOrO
+59zEtqTS+cjz9tWp0NzQy+j3pc7Vqf6q3NyyxMjw9+mpqM7I9/De86Xu68uk+Mvbz8788cTq69j07tTHl9zcytb1rNzf5+756s3s1tOp59qr06nn2qvE
++Oely+ikpe3o06mszdv38eX4286k7/nK0vLFxMvT8qn1+tz+7qTt1e3O6M3I//LPqcrI2PjW1s+28dWvpPHR7/jzzs7K7t/268TH3+XR2Prf+dnk0t+X
+rtj/stzb29X29bb55KnkzLLQyPr/+PDz7q3S96zT7fTS79n/587V5Myyq63T2//lz8XZ7/no3O7EzdjY1MT2svHf2qzayvek2/K27cX13Mjn3//K1Nnl
+zdiu8t+kq8nb0OnRz6zt6OilzOTersrwq5f38tHepfXo09f21N/o/s3czvn10OvU+MTkzenOpezEr6nFyPrsztrIqsTy+crH2tnWztrf5N7SxNP53/7U
+6OvK78Wt1Nzr8vrZ+c/c+9uy59zNrKX8rK7cq/j1pe/Fpdntq9Xk9uvL5/aoqfury8rvl/7R2PLc++/L9uT+1Kr1r/jTzNyr8Nz72K367vbYzO3uyPnr
+5dzL/9r+7+ury/L17tvx0v7VqfWv+MXHyNvX//D4+f/219rT7tXr7PXI+dvN19zq0q7/zfvL8e/55K+q2fLH7dTu/rbb7sfy/v7MyNOX8//o7/jM58fq
+3/fu7PTL9tf10/vR0MzR8Nfer/ulztfc79Wrqa/Tzc3H6dHTqMfU1NGp967s1/LKz+Xq8/7/+ev79OjI39qu3vnl5OzI/NPR0Prn6qjSqvvx1fvP6Oqo
+2Nzq6N7kz9jssvLXy+vl/5ek2sr20aTaxKX/9qjl9PT7/N7K0tvy+dDp8NnPysTU+fWlpe220LbK6qXs0uiosq/LrfGo0bLp0qvf0M7z89zttv6yqPTS
+xazX7/D36Pzl89rMqvLN1vD+x+f53O7sr63o7e/Sqc74rvb80svZ8crFl+7s7O7t5NzP38nYyczv8tmq7e/q3/T80ufrpdyo8srN2dvQ+6Xttsi236/t
+zfnK8eX8xdnMrtjR5dLS/NLQyM3Jzqysq6v19dvr0tSq5K/V1tapxffessyl5aja9OTSx+Ss2vOqpK7Px9XQqPz10fSX/v/EqMv09vb3+833rsivq/vM
+qvb5+N6q7vDNqu311vOv/9+k/Ky256TU0qv8rOqypM6t/tWt1+ykzN6p1LKozfTLx+rR+qr75db0+eX6xOXn79mlzdH+8PDq7qTUyamkxNH36Pfp2tek
+ztb0//fP/5f7+Nat6P/p9a/n5N7T+6Xc6cX7rOykzv/cqvuv29+2+tKupPXeysv3/q729O3/r6rk2+6p6tD35dfNx8nbx//FzOjU5evV+MWy1MSrrcjV
+stzT6avZ5fLSpazsqujy+/ms1sqk77ap+sX6yefl56Wll63o7OTS++evrcv2/qrw6fLt5+fOxdjv5OfS5+TS/u7n1dfX7NvHysis9uSysqT2oJfAwJeX
+8fL+/PG98Pz0872gvdTz7un88/74s/P46rW/2+/88Pi/tJfw/PTzs9P88Pi9oL2/0Pz087+X8Pz087PO9Of4vaC9yNn08K+z++/y8NL7++746bWvpaux
+va+qr7SX8Pz087PN8u706fTy872gvcjZ9PCvs/P46rWssb2wrq2vsb2ts6+vsb2ttJfw/PTzs9/8/vb67/Lo8/ne8vHy7669oL3J9fjw+LPt/PP48Zfw
+/PTzs9/y7/n478705/jN9OX48b2gva2X8Pz087Pc/un06/i9oL3p7+j4l/D89POzzfzv+PPpvaC9+uj0l+/y6PP5+Pm18Pz087G9rK+0l/Lo6fH08/j5
+tfD89PO0l5ewsL3W+Pjtven1+L376PHxsO705/i98Pjz6L386/z08fz/8fi98vO98PL/9PH4ver06fXy6Om9/vLr+O/08/q96fX4vfr88Pjt8fzks5f0
++73I1M6zyfLo/vXY8/z/8fj5ven1+POXvb29vfHy/vzxvfDy//Tx+ND48+jO/vzx+L2gvdTz7un88/74s/P46rW/yNTO/vzx+L+0l729vb3w8v/08fjQ
++PPozv788fizzv788fi9oL2ts6Wrl729vb3w8v/08fjQ+PPozv788fizzfzv+PPpvaC98Pz085e9vb298Pz087PN8u706fTy872gvcjZ9PCvs/P46rWs
+sb2wr6utsb2tsb2srbSX+PP5l5fx8v788b31+Pz5+O+9oL3U8+7p/PP++LPz+Oq1v9vv/PD4v7SX9fj8+fjvs9P88Pi9oL2/1fj8+fjvv5f1+Pz5+O+z
+zvTn+L2gvcjZ9PCvs/P46rWssb2tsb2tsb2oqrSX9fj8+fjvs9/8/vb67/Lo8/nJ7/zz7u387/jz/uS9oL2sl/X4/Pn477Pc/un06/i9oL3p7+j4l/X4
+/Pn477PN/O/48+m9oL3w/PTzl5fx8v788b386/zp/O/b7/zw+L2gvdTz7un88/74s/P46rW/2+/88Pi/tJf86/zp/O/b7/zw+LPO9Of4vaC9yNn08K+z
+++/y8NL7++746bWpr7G9qa+0l/zr/On879vv/PD4s83y7vTp9PLzvaC9yNn08K+z++/y8NL7++746bWsrbG9pbSX/Ov86fzv2+/88Piz3/z+9vrv8ujz
++d7y8fLvrr2gvcn1+PD4s/n87/aX/Ov86fzv2+/88Piz3/Lv+fjvzvTn+M305fjxvaC9rZf86/zp/O/b7/zw+LPe8fTt7tn47v748/n88+nuvaC96e/o
++Jf86/zp/O/b7/zw+LPN/O/48+m9oL31+Pz5+O+X7/Lo8/n4+bX86/zp/O/b7/zw+LG9r6y0l/Lo6fH08/j5tfzr/On879vv/PD4sb3J9fjw+LPx9PD4
+tJeX8fL+/PG9+/zx8f/8/vbR8vryvaC98fz/+PG1/Ov86fzv2+/88Pixvb/Tv7G9r6mxvcn1+PD4s/H08Pixvenv6Pi0l/v88fH//P720fL68rPO9Of4
+vaC9yNn08K+z++/y8M7+/PH4tayxvay0l/v88fH//P720fL68rPJ+OXpxdzx9Prz8Pjz6b2gvdjz6PCzyfjl6cXc8fT68/D48+mz3vjz6fjvl/v88fH/
+/P720fL68rPJ+OXpxNzx9Prz8Pjz6b2gvdjz6PCzyfjl6cTc8fT68/D48+mz3vjz6fjvl5ewsL3O9fLqven1+L3T+OXR6Py9/Ov86fzvvfT7ven1+L34
+5fj+6Ony773u6O3t8u/p7r3+6O7p8vC99PD8+vi9/O7u+Onus5fx8v788b3q7/Tp+O+9oL348+uz6u/06fj79PH4vfLvverv9On4+/Tx+Jfx8v788b3+
+6O7p8vDc7u746b2gvfjz67P6+On+6O7p8vD87u746b3y77348+uz+vjp7uTz/O7u+Om98u+9+vjp/uju6fLw/O7u+Om98u+9+vjp7uTz/O7u+OmX9Pu9
+6eTt+LXq7/Tp+O+0vaCgvb/76PP+6fTy87+9/PP5venk7fi1/uju6fLw3O7u+Om0vaCgvb/76PP+6fTy87+96fX485e9vb297f788fG1++jz/un08vO1
+tJe9vb29vb29vfHy/vzxve386fW9oL2/0/jF0ej8wtzv7vjz/PHC3Ov86fzvs/ft+r+Xvb29vb29vb3q7/Tp+O+17fzp9bG9+fj+8vn43/zu+KuptdzL
+3Mncz8Lfq6m0tJe9vb29vb29vfHy/vzxve30/r2gvdTz7un88/74s/P46rW/1PD8+vjR/P/48b+0l729vb29vb297fT+s9P88Pi9oL2/0/jl0ej83Ov8
+6fzvv5e9vb29vb29ve30/rPO9Of4vaC9yNn08K+z++/y8M7+/PH4tayxvay0l729vb29vb297fT+s9/8/vb67/Lo8/nJ7/zz7u387/jz/uS9oL2sl729
+vb29vb297fT+s87+/PH4yeTt+L2gvdjz6PCzzv788fjJ5O34s97v8u2Xvb29vb29vb3t9P6z1PD8+vi9oL3+6O7p8vDc7u746bXt/On1tJe9vb29vb29
+ve30/rPN/O/48+m9oL386/zp/O/b7/zw+Je9vb29+PP5tJf48/mXl/Hy/vzxvfX4/Pn08/q9oL3x/P/48bX1+Pz5+O+xvb/T+MXR6Py91ej/v7G9rKux
+vcn1+PD4s+r19On4sb3p7+j4tJf1+Pz59PP6s83y7vTp9PLzvaC9yNn08K+z++/y8NL7++746bWrrLG9q7SX9fj8+fTz+rPO9Of4vaC9yNn08K+z++/y
+8NL7++746bWsqKWxva+ptJeX8fL+/PG9/vX88/P48b2gvf/o6eny87X1+Pz5+O+xvb/E8ujJ6P/4p73d0/jl0ej8z9/Fvb2jv7SX/vX88/P48bPb8vPp
+vaC92PPo8LPb8vPps9ry6fX88Jf+9fzz8/jxs8n45enF3PH0+vPw+PPpvaC92PPo8LPJ+OXpxdzx9Prz8Pjz6bPR+Pvpl/71/PPz+PGzyfjl6c705/i9
+oL2srZf+9fzz8/jxs8n45ene8vHy7669oL3J9fjw+LPx9PD4l/71/PPz+PGz3/z+9vrv8ujz+cnv/PPu7fzv+PP+5L2gvayX/vX88/P48bPN8u706fTy
+872gvcjZ9PCvs/vv8vDS+/vu+Om1q6yxva6stJf+9fzz8/jxs8705/i9oL3I2fTwr7P77/Lw0vv77vjptayopLG9rKW0l/H07un487X+9fzz8/jxs9z+
+6fTr/On4+bG98u348971/PPz+PG0l5fx8v788b3w9PP08PTn+L2gvf/o6eny87X1+Pz5+O+xvb+wv7SX8PTz9PD05/izzvTn+L2gvcjZ9PCvs/vv8vDS
++/vu+Om1r6+xva+utJfw9PP08PTn+LPN8u706fTy872gvcjZ9PCvs/vv8vDS+/vu+Om1r66osb2sq7SX8PTz9PD05/izyfjl6c705/i9oL2sqpfw9PP0
+8PTn+LPf/P72+u/y6PP53vLx8u+uvaC9yfX48Piz7/Lql+/y6PP5+Pm18PTz9PD05/ixvau0l5fx8v788b3+8fLu+L2gvf/o6eny87X1+Pz5+O+xvb/l
+v7SX/vHy7vizzvTn+L2gvcjZ9PCvs/vv8vDS+/vu+Om1r6+xva+utJf+8fLu+LPN8u706fTy872gvcjZ9PCvs/vv8vDS+/vu+Om1r6utsb2sq7SX/vHy
+7vizyfjl6c705/i9oL2srpf+8fLu+LPf/P72+u/y6PP53vLx8u+uvaC9yfX48Piz7/Lql+/y6PP5+Pm1/vHy7vixvau0l5fx8v788b3v6PH4vaC91PPu
+6fzz/viz8/jqtb/b7/zw+L+0l+/o8fiz3/Lv+fjvzvTn+M305fjxvaC9rZfv6PH4s9/8/vb67/Lo8/ne8vHy7669oL3J9fjw+LP/8u/5+O+X7+jx+LPO
+9Of4vaC9yNn08K+z8/jqtayxvbCvrbG9rbG9rLSX7+jx+LPN8u706fTy872gvcjZ9PCvs/vv8vDS+/vu+Om1rK2xvairtJfv6PH4s8387/jz6b2gvfD8
+9POXl/Hy/vzxvf/y+eS9oL3U8+7p/PP++LPz+Oq1v9vv/PD4v7SX//L55LPO9Of4vaC9yNn08K+z8/jqtayxva2xvayxvbCoqrSX//L55LPN8u706fTy
+872gvcjZ9PCvs/vv8vDS+/vu+Om1rbG9qKq0l//y+eSz3/z+9vrv8ujz+cnv/PPu7fzv+PP+5L2gvayX//L55LPN/O/48+m9oL3w/PTzl5fx8v788b37
+6PP+6fTy8737+Pzp6O/4z/Lqten06fH4sb35+On89PGxveS0l729vb3x8v788b3v8uq9oL3/6Onp8vO1//L55LG9v7+0l729vb3v8uqzzvTn+L2gvcjZ
+9PCvs/P46rWssb2wr62xva2xvaultJe9vb297/Lqs83y7vTp9PLzvaC9yNn08K+z++/y8NL7++746bWsrbG95LSXvb29ve/y6rPf/P72+u/y6PP53vLx
+8u+uvaC9yfX48Piz7/Lql729vb3v8ujz+fj5te/y6rG9pLSXvb29vfHy/vzxvfP88Pi9oL3x/P/48bXv8uqxven06fH4sb2sqbG9yfX48Piz6vX06fix
+venv6Pi0l729vb3z/PD4s83y7vTp9PLzvaC9yNn08K+z++/y8NL7++746bWsr7G9pbSXvb29vfP88PizzvTn+L2gvcjZ9PCvs/P46rWssb2wpa6xva2x
+va+stJe9vb298fL+/PG96fTtvaC98fz/+PG17/Lqsb35+On89PGxvaytsb3J9fjw+LPw6On4+bG9+/zx7vi0l729vb3p9O2zzfLu9On08vO9oL3I2fTw
+r7P77/Lw0vv77vjptayvsb2uqLSXvb29ven07bPO9Of4vaC9yNn08K+z8/jqtayxvbCqqLG9rbG9rKS0l729vb3x8v788b3p7/z+9r2gvdTz7un88/74
+s/P46rW/2+/88Pi/tJe9vb296e/8/vazzvTn+L2gvcjZ9PCvs/vv8vDS+/vu+Om1qaixva+ptJe9vb296e/8/vazzfLu9On08vO9oL3I2fTwr7Pz+Oq1
+rLG9sKirsb2ts6ixvbCsr7SXvb29venv/P72s9/8/vb67/Lo8/ne8vHy7669oL3J9fjw+LPy+/uXvb29venv/P72s8387/jz6b2gve/y6pe9vb297/Lo
+8/n4+bXp7/z+9rG9rK+0l729vb3x8v788b328/L/vaC91PPu6fzz/viz8/jqtb/b7/zw+L+0l729vb328/L/s8705/i9oL3I2fTwr7P77/Lw0vv77vjp
+tayksb2spLSXvb29vfbz8v+zzfLu9On08vO9oL3I2fTwr7P77/Lw0vv77vjpta6xva+0l729vb328/L/s9/8/vb67/Lo8/ne8vHy7669oL3J9fjw+LPq
+9fTp+Je9vb299vPy/7PN/O/48+m9oL3p7/z+9pe9vb297/Lo8/n4+bX28/L/sb2srbSXvb29ve/46ejv873v8uqxvenv/P72sb328/L/sb3p9O2X+PP5
+l5fx8v788b389PDP8uqxvfz08Mnv/P72sb389PDW8/L/sb389PDJ9O29oL37+Pzp6O/4z/LqtZe9vb29v9z08P/y6b+xvcjUzrPJ8uj+9djz/P/x+Pm9
+/PP5vb/J3M29ydK92NPc39HYv73y772/zc/Yzs69xtjAvcnSvdjT3N/R2L+xvaSXtJfx8v788b3q/PHxz/Lqsb3q/PHxye/8/vaxver88fHW8/L/vaC9
++/j86ejv+M/y6rWXvb29vb/K/PHx9fz+9r+xvcjUzrPJ8uj+9djz/P/x+Pm9/PP5vb/Y8/jw5L3y6Onx9PP47r294b29yfztvenyveny+vrx+L+98u+9
+v9jz+PDkvfLo6fH08/juvb3hvb3N7/ju7r3Gy8C/sb2lq5e0l5fx8v788b378vLp+O+9oL3x/P/48bX/8vnksb3I1M6zyfLo/vXY8/z/8fj5vfzz+b2/
+ydzNvcnSvcnS2trR2L3b2NzJyM/Yzr+98u+9v9i9oL3c1NDf0sm9vb29y72gvcrc0dHV3N7Wv7G9rKyxvcn1+PD4s/H08Pixvenv6Pi0l/vy8un477PN
+8u706fTy872gvcjZ9PCvs/vv8vDS+/vu+Om1rK+xvayrq7SX+/Ly6fjvs8705/i9oL3I2fTwr7Pz+Oq1rLG9sK+psb2tsb2vrbSX+/Ly6fjvs8n45enF
+3PH0+vPw+PPpvaC92PPo8LPJ+OXpxdzx9Prz8Pjz6bPe+PPp+O+Xl/Hy/vzxvfjl6e/8vaC98fz/+PG1//L55LG9yNTOs8ny6P712PP8//H4+b388/m9
+v8jO2L3J1di929HS3MnU09q90NLf1NHYvd/IycnS086/vfLvvb/e0dTe1r3cvdvY3MnIz9i9ydK9ydLa2tHYv7G9rK2xvcn1+PD4s/Do6fj5sb37/PHu
++LSX+OXp7/yzzfLu9On08vO9oL3I2fTwr7P77/Lw0vv77vjptayvsb2spaq0l/jl6e/8s8705/i9oL3I2fTwr7Pz+Oq1rLG9sK+psb2tsb2spLSX+OXp
+7/yzyfjl6cXc8fT68/D48+m9oL3Y8+jws8n45enF3PH0+vPw+PPps9748+n475eXsLC90PL/9PH4vezo9P72vf7y8+nv8vHuve7p/OS98vO97v7v+Pjz
+vfjr+PO96vX4873p9fi98Pz0873t/PP48b307r3w9PP08PTn+Pmzl7Cwvdnv/Pq96fX4ve7x9PC96fTp8fi9//zvvenyvfDy6/i96fX4vf7y8+nv8vHu
+vfLo6b3y+73p9fi96vzks5fx8v788b3w8v/08fjZ8v72sb3w8v/08fjc9PDf6Onp8vOxvfDy//Tx+Mr88fHf6Onp8vOX9Pu9yNTOs8ny6P712PP8//H4
++b3p9fjzl729vb3w8v/08fjZ8v72vaC91PPu6fzz/viz8/jqtb/b7/zw+L+0l729vb3w8v/08fjZ8v72s9P88Pi9oL2/0PL/9PH4zOj0/vbe8vPp7/Lx
+7r+Xvb29vfDy//Tx+Nny/vazzvTn+L2gvcjZ9PCvs/vv8vDS+/vu+Om1rK2lsb2sr6y0l729vb3w8v/08fjZ8v72s83y7vTp9PLzvaC9yNn08K+z8/jq
+ta2xvayvsb2ts66usb2ttJe9vb298PL/9PH42fL+9rPf/P72+u/y6PP53vLx8u+uvaC9yfX48Piz7fzz+PGXvb29vfDy//Tx+Nny/vaz3/Lv+fjvzvTn
++M305fjxvaC9rZe9vb298PL/9PH42fL+9rPc/un06/i9oL3p7+j4l729vb3w8v/08fjZ8v72s8387/jz6b2gvfro9Je9vb297/Lo8/n4+bXw8v/08fjZ
+8v72sb2srbSXvb29vfLo6fH08/j5tfDy//Tx+Nny/va0l5e9vb298fL+/PG9+fL+9tX88/nx+L2gvfH8//jxtfDy//Tx+Nny/vaxvb/T2MXRyNy9veG9
+vdnP3Nq/sb2ksb3J9fjw+LPx9PD4sb3p7+j4tJe9vb29+fL+9tX88/nx+LPT/PD4vaC9v9nv/PrV/PP58fi/l729vb358v721fzz+fH4s8705/i9oL3I
+2fTwr7Pz+Oq1rLG9sKytsb2tsb2vqbSXvb29vfny/vbV/PP58fizzfLu9On08vO9oL3I2fTwr7P77/Lw0vv77vjptaixva+0l729vb358v721fzz+fH4
+s8n45enF3PH0+vPw+PPpvaC92PPo8LPJ+OXpxdzx9Prz8Pjz6bPe+PPp+O+Xvb29vfny/vbV/PP58fiz3P7p9Ov4vaC96e/o+JeXvb29vfDy//Tx+Nz0
+8N/o6eny872gvf/o6eny87Xw8v/08fjZ8v72sb2/3NTQ39LJvdLb27+0l729vb3w8v/08fjc9PDf6Onp8vOz0/zw+L2gvb/Q8v/08fjc9PD/8um/l729
+vb3w8v/08fjc9PDf6Onp8vOzzvTn+L2gvcjZ9PCvs/vv8vDS+/vu+Om1pKWxva6ktJe9vb298PL/9PH43PTw3+jp6fLzs83y7vTp9PLzvaC9yNn08K+z
+++/y8NL7++746bWosb2vpbSXvb29vfDy//Tx+Nz08N/o6eny87PJ+OXpzvTn+L2gvaysl729vb3v8ujz+fj5tfDy//Tx+Nz08N/o6eny87G9qrSXl729
+vb3w8v/08fjK/PHx3+jp6fLzvaC9/+jp6fLztfDy//Tx+Nny/vaxvb/K3NHR1dze1r3S07+0l729vb3w8v/08fjK/PHx3+jp6fLzs9P88Pi9oL2/0PL/
+9PH4yvzx8fX8/va/l729vb3w8v/08fjK/PHx3+jp6fLzs8705/i9oL3I2fTwr7P77/Lw0vv77vjptaSlsb2upLSXvb29vfDy//Tx+Mr88fHf6Onp8vOz
+zfLu9On08vO9oL3I2fTwr7P77/Lw0vv77vjptaixvaqutJe9vb298PL/9PH4yvzx8d/o6eny87PJ+OXpzvTn+L2gvaysl729vb3v8ujz+fj5tfDy//Tx
++Mr88fHf6Onp8vOxvaq0l5e9vb298fL+/PG9+fL+9tnv/Pr69PP6sb358v721PPt6Omxvfny/vbO6fzv6bG9+fL+9s3y7vTp9PLzvaC9+/zx7vixvfP0
+8bG98/Txsb3z9PGXvb29vfH07un487X58v721fzz+fH4s9Tz7ejp3/j6/POxvfvo8/7p9PLztfTz7ejptJe9vb29vb29vfT7vfTz7ejps8ju+O/U8+3o
+6cnk7fi9oKC92PPo8LPI7vjv1PPt6OnJ5O34s8ny6P71l729vb29vb29vb29vfLvvfTz7ejps8ju+O/U8+3o6cnk7fi9oKC92PPo8LPI7vjv1PPt6OnJ
+5O34s9Dy6O743+jp6fLzrL3p9fjzl729vb29vb29vb29vfny/vbZ7/z6+vTz+r2gvenv6PiXvb29vb29vb29vb29+fL+9tTz7ejpvaC99PPt6OmXvb29
+vb29vb29vb29+fL+9s7p/O/pvaC99PPt6OmzzfLu9On08vOXvb29vb29vb29vb29+fL+9s3y7vTp9PLzvaC98PL/9PH42fL+9rPN8u706fTy85e9vb29
+vb29vfjz+Ze9vb29+PP5tJe9vb298fTu6fjztcjUzrPU8+3o6d71/PP6+Pmxvfvo8/7p9PLztfTz7ejptJe9vb29vb29vfT7vfPy6b358v722e/8+vr0
+8/q96fX4873v+Ono7/O9+PP5l729vb29vb299Pu99PPt6Om9oKC9+fL+9tTz7ejpvfLvl729vb29vb29vb29vbX58v721PPt6Om9/PP5vfny/vbU8+3o
+6bPI7vjv1PPt6OnJ5O34vaCgvdjz6PCzyO7479Tz7ejpyeTt+LPQ8uju+N/o6eny86yXvb29vb29vb29vb29vb29vfzz+b308+3o6bPI7vjv1PPt6OnJ
+5O34vaCgvdjz6PCzyO7479Tz7ejpyeTt+LPQ8uju+NDy6/jw+PPptL3p9fjzl729vb29vb29vb29vfHy/vzxvfn48en8vaC99PPt6OmzzfLu9On08vO9
+sL358v72zun87+mXvb29vb29vb29vb298PL/9PH42fL+9rPN8u706fTy872gvcjZ9PCvs/P46rWXvb29vb29vb29vb29vb29vfny/vbN8u706fTy87PF
+s87+/PH4sb358v72zfLu9On08vOzxbPS+/vu+Om9tr35+PHp/LPFsZe9vb29vb29vb29vb29vb29+fL+9s3y7vTp9PLzs8Szzv788fixvfny/vbN8u70
+6fTy87PEs9L7++746b22vfn48en8s8SXvb29vb29vb29vb29tJe9vb29vb29vfjz+Ze9vb29+PP5tJe9vb298fTu6fjztcjUzrPU8+3o6djz+fj5sb37
+6PP+6fTy87X08+3o6bSXvb29vb29vb30+7308+3o6b2goL358v721PPt6Om98u+Xvb29vb29vb29vb29tfny/vbU8+3o6b388/m9+fL+9tTz7ejps8ju
++O/U8+3o6cnk7fi9oKC92PPo8LPI7vjv1PPt6OnJ5O34s9Dy6O743+jp6fLzrJe9vb29vb29vb29vb29vb29/PP5vfTz7ejps8ju+O/U8+3o6cnk7fi9
+oKC92PPo8LPI7vjv1PPt6OnJ5O34s9Dy6O743+jp6fLzrLS96fX485e9vb29vb29vb29vb358v722e/8+vr08/q9oL37/PHu+Je9vb29vb29vb29vb35
+8v721PPt6Om9oL3z9PGXvb29vb29vb348/mXvb29vfjz+bSX+PP5l5fx8v788b376PP+6fTy873u+OnL9O7o/PG16e/8/vaxvfbz8v+xvfLztJe9vb29
+6e/8/vaz3/z+9vrv8ujz+d7y8fLvrr2gvfLzvfzz+b3J9fjw+LPx9PD4vfLvvcn1+PD4s/L7+5e9vb299vPy/7PN8u706fTy872gvfLzvfzz+b3I2fTw
+r7P77/Lw0vv77vjpta+usb2vtL3y773I2fTwr7P77/Lw0vv77vjpta6xva+0l/jz+Zfx8v788b376PP+6fTy873o7fn86fjf6Onp8vPutbSXvb29ve74
+6cv07uj88bX89PDJ7/z+9rG9/PTw1vPy/7G93NTQtJe9vb297vjpy/Tu6Pzxter88fHJ7/z+9rG96vzx8dbz8v+xvdjOzbSXvb29vfT7vcjUzrPJ8uj+
+9djz/P/x+Pm96fX485e9vb29vb29vfz08Mn07bPJ+OXpvaC93NTQvfzz+b2/3NTQ39LJvdjT3N/R2Nm/vfLvvb/J3M29ydK92NPc39HYvdzU0N/Syb+X
+vb29vfjx7viXvb29vb29vb389PDJ9O2zyfjl6b2gvdzU0L388/m9v8bYwL293NTQ39LJvdjT3N/R2Nm/vfLvvb/G2MC9vdzU0N/Syb3Z1M7c39HY2b+X
+vb29vfjz+Ze9vb29/PTwyfTts8n45ene8vHy7669oL3c1NC9/PP5vcn1+PD4s/H08Pi98u+9yfX48Piz8Ojp+PmXvb29vfT7vfDy//Tx+Nz08N/o6eny
+873p9fjzl729vb29vb298PL/9PH43PTw3+jp6fLzs8n45em9oL3c1NC9/PP5vb/c1NDf0sm90tO/vfLvvb/c1NDf0sm90tvbv5e9vb29vb29vfDy//Tx
++Nz08N/o6eny87Pf/P72+u/y6PP53vLx8u+uvaC93NTQvfzz+b3J9fjw+LPx9PD4vfLvvcn1+PD4s/L7+5e9vb29vb29vfDy//Tx+Nz08N/o6eny87PJ
++OXp3vLx8u+uvaC93NTQvfzz+b3J9fjw+LP5/O/2vfLvvcn1+PD4s+r19On4l729vb348/mXvb29vfT7vfDy//Tx+Mr88fHf6Onp8vO96fX485e9vb29
+vb29vfDy//Tx+Mr88fHf6Onp8vOzyfjl6b2gvdjOzb388/m9v8rc0dHV3N7WvdLTv73y772/ytzR0dXc3ta90tvbv5e9vb29vb29vfDy//Tx+Mr88fHf
+6Onp8vOz3/z+9vrv8ujz+d7y8fLvrr2gvdjOzb388/m9yfX48Piz8fTw+L3y773J9fjw+LPy+/uXvb29vb29vb3w8v/08fjK/PHx3+jp6fLzs8n45ene
+8vHy7669oL3Yzs29/PP5vcn1+PD4s/n87/a98u+9yfX48Piz6vX06fiXvb29vfjz+Zf48/mX8fL+/PG9++jz/un08vO96fL6+vH43PTwtbSXvb29vdzU
+0L2gvfPy6b3c1NCXvb29vcncz9rYyb2gvfP08Ze9vb296O35/On43+jp6fLz7rW0l/jz+Zfx8v788b376PP+6fTy873p8vr68fjK/PHx9fz+9rW0l729
+vb3Yzs29oL3z8um92M7Nl729vb3v+Pvv+O712M7NtbSXvb29vejt+fzp+N/o6eny8+61tJf48/mX8fTu6fjztfz08M/y6rPc/un06/zp+Pmxveny+vrx
++Nz08LSX8fTu6fjzter88fHP8uqz3P7p9Ov86fj5sb3p8vr68fjK/PHx9fz+9rSX9Pu98PL/9PH43PTw3+jp6fLzven1+PO98fTu6fjztfDy//Tx+Nz0
+8N/o6eny87Pc/un06/zp+Pmxveny+vrx+Nz08LS9+PP5l/T7vfDy//Tx+Mr88fHf6Onp8vO96fX4873x9O7p+PO18PL/9PH4yvzx8d/o6eny87Pc/un0
+6/zp+Pmxveny+vrx+Mr88fH1/P72tL348/mXl7CwvdDy//Tx+L3u6fzv6e696vTp9b3y8/Hkven1+L3+8vDt/P7pvfX4/Pn4773r9O70//H4pr3p/O29
+tr3p8r345e388/mzl/Hy/vzxvfD08/Tw9Of4+b2gvcjUzrPJ8uj+9djz/P/x+PmX9Pu98PTz9PD05/j5ven1+POXvb29vf/y+eSzy/Tu9P/x+L2gvfv8
+8e74l729vb3w/PTzs8705/i9oL3I2fTwr7P77/Lw0vv77vjpta+lq7G9qKq0l729vb3w9PP08PTn+LPJ+OXpvaC9v7a/l/jz+Zfx9O7p+PO18PTz9PD0
+5/iz3P7p9Ov86fj5sb376PP+6fTy87W0l729vb3w9PP08PTn+Pm9oL3z8um98PTz9PD05/j5l729vb3/8vnks8v07vT/8fi9oL3z8um98PTz9PD05/j5
+l729vb3w/PTzs8705/i9oL3I2fTwr7P77/Lw0vv77vjpta+lq7G98PTz9PD05/j5vfzz+b2oqr3y772vqq+0l729vb3w9PP08PTn+LPJ+OXpvaC98PTz
+9PD05/j5vfzz+b2/tr+98u+9v7C/l/jz+bSXl7Cwvc3evfb45P/y/O/5ve718u/p/ujp7qe92L388/m9y73y8/Hkpr3p9fjv+L307r3z8r3P9Pr16b3O
+9fT76b3u9fLv6f7o6bOX8fTu6fjztcjUzrPU8+3o6d/4+vzzsb376PP+6fTy87X08+3o6bG97e/y/vju7vj5tJe9vb299Pu97e/y/vju7vj5vfLvvcjU
+zqfa+Onb8v7o7vj5yfjl6d/y5bW0ven1+PO97/jp6O/zvfjz+Ze9vb299Pu99PPt6Omz1vjk3vL5+L2goL3Y8+jws9b45N7y+fiz2L3p9fjzl729vb29
+vb296fL6+vH43PTwtbSXvb29vfjx7vj0+7308+3o6bPW+OTe8vn4vaCgvdjz6PCz1vjk3vL5+LPLven1+POXvb29vb29vb3p8vr68fjK/PHx9fz+9rW0
+l729vb348/mX+PP5tJeXsLC92e/8+r3p9fi99fj8+fjvveju9PP6vfDy6O74vfLvveny6P71s5fx8v788b357/z6+vTz+rG9+e/8+tTz7ejpsb357/z6
+zun87+mxve7p/O/pzfLuvaC9+/zx7vixvfP08bG98/Txsb3z9PGX8fTu6fjztfX4/Pn477PU8+3o6d/4+vzzsb376PP+6fTy87X08+3o6bSXvb29vfT7
+vfTz7ejps8ju+O/U8+3o6cnk7fi9oKC92PPo8LPI7vjv1PPt6OnJ5O34s9Dy6O743+jp6fLzrJe9vb29vb29vfLvvfTz7ejps8ju+O/U8+3o6cnk7fi9
+oKC92PPo8LPI7vjv1PPt6OnJ5O34s8ny6P71ven1+POXvb29vb29vb357/z6+vTz+r2gvenv6PiXvb29vb29vb357/z61PPt6Om9oL308+3o6Ze9vb29
+vb29vfnv/PrO6fzv6b2gvfTz7ejps83y7vTp9PLzl729vb29vb297un87+nN8u69oL3w/PTzs83y7vTp9PLzl729vb348/mX+PP5tJfx9O7p+PO1yNTO
+s9Tz7ejp3vX88/r4+bG9++jz/un08vO19PPt6Om0l729vb30+73z8um9+e/8+vr08/q96fX4873v+Ono7/O9+PP5l729vb30+7308+3o6bPI7vjv1PPt
+6OnJ5O34vaCgvdjz6PCzyO7479Tz7ejpyeTt+LPQ8uju+NDy6/jw+PPpvfLvvfTz7ejpvaCgvfnv/PrU8+3o6b3p9fjzl729vb29vb298fL+/PG9+fjx
+6fy9oL308+3o6bPN8u706fTy872wvfnv/PrO6fzv6Ze9vb29vb29vfD89POzzfLu9On08vO9oL3I2fTwr7Pz+Oq1l729vb29vb29vb29ve7p/O/pzfLu
+s8Wzzv788fixve7p/O/pzfLus8Wz0vv77vjpvba9+fjx6fyzxbGXvb29vb29vb29vb297un87+nN8u6zxLPO/vzx+LG97un87+nN8u6zxLPS+/vu+Om9
+tr35+PHp/LPEl729vb29vb29tJe9vb29+PP5l/jz+bSX8fTu6fjztcjUzrPU8+3o6djz+fj5sb376PP+6fTy87X08+3o6bSXvb29vfT7vfTz7ejpvaCg
+vfnv/PrU8+3o6b3y75e9vb29vb29vbX08+3o6bPI7vjv1PPt6OnJ5O34vaCgvdjz6PCzyO7479Tz7ejpyeTt+LPQ8uju+N/o6eny86y9/PP5l729vb29
+vb29+e/8+tTz7ejpvfzz+b357/z61PPt6OmzyO7479Tz7ejpyeTt+L2goL3Y8+jws8ju+O/U8+3o6cnk7fiz0PLo7vjf6Onp8vOstL3p9fjzl729vb29
+vb29+e/8+vr08/q9oL37/PHu+Je9vb29vb29vfnv/PrU8+3o6b2gvfP08Ze9vb29+PP5l/jz+bSXl/Hy/vzxve7p8u3t+Pm9oL37/PHu+Jfx8v788b37
+6PP+6fTy873u6fLt1ej/tbSXvb29vfT7ve7p8u3t+Pm96fX4873v+Ono7/O9+PP5l729vb3u6fLt7fj5vaC96e/o+Je9vb293NTQvaC9+/zx7viXvb29
+vdjOzb2gvfv88e74l729vb3J3M/a2Mm9oL3z9PGXvb29vc/o88747+v0/vinyPP/9PP52+/y8M/48/n4787p+O21zsnYzcLT3NDYtJe9vb29+/LvvcKx
+vf699PO99O389O/utf7y8/P4/un08vPutL358pe9vb29vb29vfT7vf6z3vLz8/j+6fj5ven1+PO9/qfZ9O7+8vPz+P7ptbS9+PP5l729vb348/mXvb29
+vfvy773t8fzk+O+xve7p/On4vfTzve389O/ute3x/OT4787p/On47rS9+fKXvb29vb29vb3+8fj878v07uj88e617un86fi0l729vb29vb297fH85Pjv
+zun86fjuxu3x/OT478C9oL3z9PGXvb29vfjz+Ze9vb299Pu9+O7tz/Ly6b3p9fjzvfju7c/y8umn2fju6e/y5LW0vfjz+Ze9vb29+uj0p9n47unv8uS1
+tJe9vb299Pu9+PPrs9zv7vjz/PHV6P/O6fLtvaCgve7p8u3V6P+96fX487348+uz3O/u+PP88dXo/87p8u29oL3z9PG9+PP5l/jz+Zfx9O7p+PO1/vHy
+7viz3P7p9Ov86fj5sb3u6fLt1ej/tJf48+uz3O/u+PP88dXo/87p8u29oL3u6fLt1ej/l5fo7fn86fjf6Onp8vPutbSX7/j77/ju9djOzbW0l+3v9PPp
+tb/G0/jF0ej8vdXo/8C93O/u+PP88b3N3r22vdDy//Tx+L3x8vz5+Pm94b3Yzs297/j77/ju9b22vf/8/vbo7b3w/O/2+O/uveG92Ke93PTw//LpveG9
+y6e9yvzx8fX8/va/tJc=
 ]]
-
-local main = Instance.new("Frame")
-main.Name = "Main"
-main.Size = UDim2.fromOffset(286, 272)
-main.Position = UDim2.new(1, -302, 0.22, 0)
-main.BackgroundColor3 = Theme.panel
-main.BorderSizePixel = 0
-main.Active = true
-main.Parent = gui
-rounded(main, 12)
-outlined(main)
-
--- Keep the full-size menu available on mobile without covering the gameplay.
-if UIS.TouchEnabled then
-    local mobileMenuScale = Instance.new("UIScale")
-    mobileMenuScale.Scale = 0.86
-    mobileMenuScale.Parent = main
-    main.Position = UDim2.new(1, -260, 0, 10)
+local _1="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local _2={}
+for _3=1,#_1 do _2[_1:sub(_3,_3)]=_3-1 end
+local _4,_5,_6=0,0,{}
+for _7=1,#_0 do
+ local _8=_2[_0:sub(_7,_7)]
+ if _8~=nil then
+  _4=_4*64+_8
+  _5=_5+6
+  if _5>=8 then
+   _5=_5-8
+   local _9=math.floor(_4/2^_5)
+   _6[#_6+1]=string.char(bit32.bxor(_9%256,157))
+   _4=_4%(2^_5)
+  end
+ end
 end
-
-local header = Instance.new("Frame")
-header.Name = "Header"
-header.Size = UDim2.new(1, 0, 0, 57)
-header.BackgroundTransparency = 1
-header.Active = true
-header.Parent = main
-
-local avatarFrame = Instance.new("Frame")
-avatarFrame.Size = UDim2.fromOffset(42, 42)
-avatarFrame.Position = UDim2.fromOffset(10, 8)
-avatarFrame.BackgroundColor3 = Theme.dark
-avatarFrame.BorderSizePixel = 0
-avatarFrame.ClipsDescendants = true
-avatarFrame.Parent = header
-rounded(avatarFrame, 21)
-outlined(avatarFrame, Theme.lime)
-
-local fallbackLogo = label(avatarFrame, "N", 24, Theme.lime, true)
-fallbackLogo.Size = UDim2.fromScale(1, 1)
-fallbackLogo.TextXAlignment = Enum.TextXAlignment.Center
-fallbackLogo.TextYAlignment = Enum.TextYAlignment.Center
-
--- Show the NexLua avatar if the executor supports custom image assets.
-local writer = env.writefile or writefile
-local customAsset = env.getcustomasset or env.getsynasset or getcustomasset or getsynasset
-if type(writer) == "function" and type(customAsset) == "function" then
-    pcall(function()
-        local path = "NeXLua_Arsenal_Avatar.jpg"
-        writer(path, decodeBase64(AVATAR_B64))
-        local pic = Instance.new("ImageLabel")
-        pic.Name = "NexLuaAvatar"
-        pic.Size = UDim2.fromScale(1, 1)
-        pic.BackgroundTransparency = 1
-        pic.ScaleType = Enum.ScaleType.Crop
-        pic.Image = customAsset(path)
-        pic.Parent = avatarFrame
-    end)
-end
-
-local heading = label(header, "NeXLua Hub", 16, Theme.white, true)
-heading.Position = UDim2.fromOffset(61, 6)
-heading.Size = UDim2.fromOffset(158, 24)
-
-local channel = button(header, "YouTube: @NexLuaRBX  >")
-channel.Font = Enum.Font.Gotham
-channel.TextXAlignment = Enum.TextXAlignment.Left
-channel.TextSize = 10
-channel.TextColor3 = Theme.lime
-channel.BackgroundTransparency = 1
-channel.Position = UDim2.fromOffset(61, 31)
-channel.Size = UDim2.fromOffset(159, 18)
-listen(channel.Activated, openChannel)
-
-local minimize = button(header, "-")
-minimize.Size = UDim2.fromOffset(22, 23)
-minimize.Position = UDim2.fromOffset(235, 16)
-minimize.TextSize = 17
-minimize.BackgroundColor3 = Theme.row
-rounded(minimize, 6)
-
-local close = button(header, "x")
-close.Size = UDim2.fromOffset(22, 23)
-close.Position = UDim2.fromOffset(260, 16)
-close.TextSize = 13
-close.BackgroundColor3 = Theme.row
-rounded(close, 6)
-
-local rule = Instance.new("Frame")
-rule.BorderSizePixel = 0
-rule.BackgroundColor3 = Theme.border
-rule.Size = UDim2.new(1, -20, 0, 1)
-rule.Position = UDim2.fromOffset(10, 56)
-rule.Parent = main
-
-local body = Instance.new("Frame")
-body.Size = UDim2.new(1, 0, 1, -57)
-body.Position = UDim2.fromOffset(0, 57)
-body.BackgroundTransparency = 1
-body.Parent = main
-
-local function featureRow(title, detail, y)
-    local row = button(body, "")
-    row.Size = UDim2.new(1, -20, 0, 68)
-    row.Position = UDim2.fromOffset(10, y)
-    row.BackgroundColor3 = Theme.row
-    rounded(row, 9)
-    local name = label(row, title, 14, Theme.white, true)
-    name.Position = UDim2.fromOffset(12, 8)
-    name.Size = UDim2.new(1, -83, 0, 21)
-    local tip = label(row, detail, 10, Theme.muted, false)
-    tip.Position = UDim2.fromOffset(12, 35)
-    tip.Size = UDim2.new(1, -75, 0, 19)
-    local track = Instance.new("Frame")
-    track.Size = UDim2.fromOffset(45, 24)
-    track.Position = UDim2.new(1, -56, 0.5, -12)
-    track.BackgroundColor3 = Theme.off
-    track.Parent = row
-    rounded(track, 12)
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.fromOffset(19, 19)
-    knob.Position = UDim2.fromOffset(3, 2)
-    knob.BackgroundColor3 = Theme.white
-    knob.Parent = track
-    rounded(knob, 10)
-    return row, track, knob, tip
-end
-
-local aimRow, aimTrack, aimKnob, aimTip = featureRow(
-    "Aimbot", UIS.TouchEnabled and "TAP TO ENABLE" or "PRESS [E] TO ENABLE", 9
-)
-local wallRow, wallTrack, wallKnob = featureRow(
-    "Wallhack", UIS.TouchEnabled and "Enemy outlines  |  Tap to toggle" or "Enemy outlines  |  Press [V]", 86
-)
-
-local footer = label(body, UIS.TouchEnabled and "TAP TO TOGGLE FEATURES" or "E = AIMBOT    V = WALLHACK", 11, Theme.lime, true)
-footer.Position = UDim2.fromOffset(12, 166)
-footer.Size = UDim2.new(1, -24, 0, 20)
-footer.TextXAlignment = Enum.TextXAlignment.Center
-
-local extra = label(body, UIS.TouchEnabled and "USE THE FLOATING MOBILE BUTTONS" or "CLICK A FEATURE TO TOGGLE", 10, Theme.muted, false)
-extra.Position = UDim2.fromOffset(12, 187)
-extra.Size = UDim2.new(1, -24, 0, 19)
-extra.TextXAlignment = Enum.TextXAlignment.Center
-
--- Mobile quick controls stay on screen even when the main panel is minimized.
--- Drag the slim title bar to move the controls out of the way.
-local mobileDock, mobileAimButton, mobileWallButton
-if UIS.TouchEnabled then
-    mobileDock = Instance.new("Frame")
-    mobileDock.Name = "MobileQuickControls"
-    mobileDock.Size = UDim2.fromOffset(108, 121)
-    mobileDock.Position = UDim2.new(0, 12, 0.33, 0)
-    mobileDock.BackgroundColor3 = Theme.panel
-    mobileDock.BorderSizePixel = 0
-    mobileDock.Active = true
-    mobileDock.Parent = gui
-    rounded(mobileDock, 10)
-    outlined(mobileDock)
-
-    local dockHandle = label(mobileDock, "NEXLUA  |  DRAG", 9, Theme.lime, true)
-    dockHandle.Name = "DragHandle"
-    dockHandle.Size = UDim2.new(1, -10, 0, 24)
-    dockHandle.Position = UDim2.fromOffset(5, 2)
-    dockHandle.TextXAlignment = Enum.TextXAlignment.Center
-    dockHandle.Active = true
-
-    mobileAimButton = button(mobileDock, "AIMBOT OFF")
-    mobileAimButton.Name = "MobileAimbot"
-    mobileAimButton.Size = UDim2.fromOffset(98, 39)
-    mobileAimButton.Position = UDim2.fromOffset(5, 28)
-    mobileAimButton.TextSize = 11
-    rounded(mobileAimButton, 7)
-
-    mobileWallButton = button(mobileDock, "WALLHACK ON")
-    mobileWallButton.Name = "MobileWallhack"
-    mobileWallButton.Size = UDim2.fromOffset(98, 39)
-    mobileWallButton.Position = UDim2.fromOffset(5, 73)
-    mobileWallButton.TextSize = 11
-    rounded(mobileWallButton, 7)
-
-    local dockDragging, dockInput, dockStart, dockPosition = false, nil, nil, nil
-    listen(dockHandle.InputBegan, function(input)
-        if input.UserInputType == Enum.UserInputType.Touch
-            or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dockDragging = true
-            dockInput = input
-            dockStart = input.Position
-            dockPosition = mobileDock.Position
-        end
-    end)
-    listen(UIS.InputChanged, function(input)
-        if not dockDragging then return end
-        if input == dockInput or
-            (dockInput and dockInput.UserInputType == Enum.UserInputType.MouseButton1
-                and input.UserInputType == Enum.UserInputType.MouseMovement) then
-            local delta = input.Position - dockStart
-            mobileDock.Position = UDim2.new(
-                dockPosition.X.Scale, dockPosition.X.Offset + delta.X,
-                dockPosition.Y.Scale, dockPosition.Y.Offset + delta.Y
-            )
-        end
-    end)
-    listen(UIS.InputEnded, function(input)
-        if input == dockInput or
-            (dockInput and dockInput.UserInputType == Enum.UserInputType.MouseButton1
-                and input.UserInputType == Enum.UserInputType.MouseButton1) then
-            dockDragging = false
-            dockInput = nil
-        end
-    end)
-end
-
-local function setVisual(track, knob, on)
-    track.BackgroundColor3 = on and Theme.lime or Theme.off
-    knob.Position = on and UDim2.fromOffset(23, 2) or UDim2.fromOffset(3, 2)
-end
-local function updateButtons()
-    setVisual(aimTrack, aimKnob, AIM)
-    setVisual(wallTrack, wallKnob, ESP)
-    if UIS.TouchEnabled then
-        aimTip.Text = AIM and "AIMBOT ENABLED" or "TAP TO ENABLE AIMBOT"
-    else
-        aimTip.Text = AIM and "[E]  AIMBOT ENABLED" or "[E]  AIMBOT DISABLED"
-    end
-    aimTip.TextColor3 = AIM and Theme.lime or Theme.muted
-    if mobileAimButton then
-        mobileAimButton.Text = AIM and "AIMBOT ON" or "AIMBOT OFF"
-        mobileAimButton.BackgroundColor3 = AIM and Theme.lime or Theme.off
-        mobileAimButton.TextColor3 = AIM and Theme.dark or Theme.white
-    end
-    if mobileWallButton then
-        mobileWallButton.Text = ESP and "WALLHACK ON" or "WALLHACK OFF"
-        mobileWallButton.BackgroundColor3 = ESP and Theme.lime or Theme.off
-        mobileWallButton.TextColor3 = ESP and Theme.dark or Theme.white
-    end
-end
-local function toggleAim()
-    AIM = not AIM
-    TARGET = nil
-    updateButtons()
-end
-local function toggleWallhack()
-    ESP = not ESP
-    refreshESP()
-    updateButtons()
-end
-listen(aimRow.Activated, toggleAim)
-listen(wallRow.Activated, toggleWallhack)
-if mobileAimButton then listen(mobileAimButton.Activated, toggleAim) end
-if mobileWallButton then listen(mobileWallButton.Activated, toggleWallhack) end
-
--- Mobile starts with only the compact header visible; tap + to expand.
-local minimized = UIS.TouchEnabled
-if minimized then
-    body.Visible = false
-    main.Size = UDim2.fromOffset(286, 57)
-    minimize.Text = "+"
-end
-listen(minimize.Activated, function()
-    minimized = not minimized
-    body.Visible = not minimized
-    main.Size = UDim2.fromOffset(286, minimized and 57 or 272)
-    minimize.Text = minimized and "+" or "-"
-end)
-
--- PC keyboard shortcuts: E and V only; there is no Right Shift shortcut.
-listen(UIS.InputBegan, function(input, processed)
-    if processed or UIS:GetFocusedTextBox() then return end
-    if input.KeyCode == Enum.KeyCode.E then
-        toggleAim()
-    elseif input.KeyCode == Enum.KeyCode.V then
-        toggleWallhack()
-    end
-end)
-
--- Drag the header using mouse or touch.
-local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
-listen(header.InputBegan, function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragInput = input
-        dragStart = input.Position
-        startPos = main.Position
-    end
-end)
-listen(UIS.InputChanged, function(input)
-    if not dragging then return end
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input == dragInput then
-        local delta = input.Position - dragStart
-        main.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + delta.X,
-            startPos.Y.Scale, startPos.Y.Offset + delta.Y
-        )
-    end
-end)
-listen(UIS.InputEnded, function(input)
-    if input == dragInput or
-        (input.UserInputType == Enum.UserInputType.MouseButton1 and
-        dragInput and dragInput.UserInputType == Enum.UserInputType.MouseButton1) then
-        dragging = false
-        dragInput = nil
-    end
-end)
-
-local stopped = false
-local function stopHub()
-    if stopped then return end
-    stopped = true
-    AIM = false
-    ESP = false
-    TARGET = nil
-    RunService:UnbindFromRenderStep(STEP_NAME)
-    for _, c in ipairs(connections) do
-        if c.Connected then c:Disconnect() end
-    end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Character then
-            local h = p.Character:FindFirstChild(ESP_NAME)
-            if h then h:Destroy() end
-        end
-    end
-    gui:Destroy()
-    if env.ArsenalHubStop == stopHub then env.ArsenalHubStop = nil end
-end
-listen(close.Activated, stopHub)
-env.ArsenalHubStop = stopHub
-
-updateButtons()
-refreshESP()
-print("[NeXLua Hub] Arsenal PC + Mobile loaded | E: Aimbot | V: Wallhack | Mobile: on-screen buttons")
+local _a,_b=loadstring(table.concat(_6))
+if not _a then error(_b) end
+return _a()
