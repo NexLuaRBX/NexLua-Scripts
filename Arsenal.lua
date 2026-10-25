@@ -1,5 +1,5 @@
--- NeXLua Hub | Arsenal Edition
--- Aimbot: press E to toggle. Wallhack: press V to toggle.
+-- NeXLua Hub | Arsenal Edition | PC + Mobile
+-- PC: E toggles Aimbot, V toggles Wallhack. Mobile: use the quick controls.
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -391,6 +391,14 @@ main.Parent = gui
 rounded(main, 12)
 outlined(main)
 
+-- Keep the full-size menu available on mobile without covering the gameplay.
+if UIS.TouchEnabled then
+    local mobileMenuScale = Instance.new("UIScale")
+    mobileMenuScale.Scale = 0.86
+    mobileMenuScale.Parent = main
+    main.Position = UDim2.new(1, -260, 0, 10)
+end
+
 local header = Instance.new("Frame")
 header.Name = "Header"
 header.Size = UDim2.new(1, 0, 0, 57)
@@ -498,18 +506,90 @@ local function featureRow(title, detail, y)
     return row, track, knob, tip
 end
 
-local aimRow, aimTrack, aimKnob, aimTip = featureRow("Aimbot", "PRESS [E] TO ENABLE", 9)
-local wallRow, wallTrack, wallKnob = featureRow("Wallhack", "Enemy outlines  |  Press [V]", 86)
+local aimRow, aimTrack, aimKnob, aimTip = featureRow(
+    "Aimbot", UIS.TouchEnabled and "TAP TO ENABLE" or "PRESS [E] TO ENABLE", 9
+)
+local wallRow, wallTrack, wallKnob = featureRow(
+    "Wallhack", UIS.TouchEnabled and "Enemy outlines  |  Tap to toggle" or "Enemy outlines  |  Press [V]", 86
+)
 
-local footer = label(body, "E = AIMBOT    V = WALLHACK", 11, Theme.lime, true)
+local footer = label(body, UIS.TouchEnabled and "TAP TO TOGGLE FEATURES" or "E = AIMBOT    V = WALLHACK", 11, Theme.lime, true)
 footer.Position = UDim2.fromOffset(12, 166)
 footer.Size = UDim2.new(1, -24, 0, 20)
 footer.TextXAlignment = Enum.TextXAlignment.Center
 
-local extra = label(body, "RIGHT SHIFT = SHOW / HIDE MENU", 10, Theme.muted, false)
+local extra = label(body, UIS.TouchEnabled and "USE THE FLOATING MOBILE BUTTONS" or "CLICK A FEATURE TO TOGGLE", 10, Theme.muted, false)
 extra.Position = UDim2.fromOffset(12, 187)
 extra.Size = UDim2.new(1, -24, 0, 19)
 extra.TextXAlignment = Enum.TextXAlignment.Center
+
+-- Mobile quick controls stay on screen even when the main panel is minimized.
+-- Drag the slim title bar to move the controls out of the way.
+local mobileDock, mobileAimButton, mobileWallButton
+if UIS.TouchEnabled then
+    mobileDock = Instance.new("Frame")
+    mobileDock.Name = "MobileQuickControls"
+    mobileDock.Size = UDim2.fromOffset(108, 121)
+    mobileDock.Position = UDim2.new(0, 12, 0.33, 0)
+    mobileDock.BackgroundColor3 = Theme.panel
+    mobileDock.BorderSizePixel = 0
+    mobileDock.Active = true
+    mobileDock.Parent = gui
+    rounded(mobileDock, 10)
+    outlined(mobileDock)
+
+    local dockHandle = label(mobileDock, "NEXLUA  |  DRAG", 9, Theme.lime, true)
+    dockHandle.Name = "DragHandle"
+    dockHandle.Size = UDim2.new(1, -10, 0, 24)
+    dockHandle.Position = UDim2.fromOffset(5, 2)
+    dockHandle.TextXAlignment = Enum.TextXAlignment.Center
+    dockHandle.Active = true
+
+    mobileAimButton = button(mobileDock, "AIMBOT OFF")
+    mobileAimButton.Name = "MobileAimbot"
+    mobileAimButton.Size = UDim2.fromOffset(98, 39)
+    mobileAimButton.Position = UDim2.fromOffset(5, 28)
+    mobileAimButton.TextSize = 11
+    rounded(mobileAimButton, 7)
+
+    mobileWallButton = button(mobileDock, "WALLHACK ON")
+    mobileWallButton.Name = "MobileWallhack"
+    mobileWallButton.Size = UDim2.fromOffset(98, 39)
+    mobileWallButton.Position = UDim2.fromOffset(5, 73)
+    mobileWallButton.TextSize = 11
+    rounded(mobileWallButton, 7)
+
+    local dockDragging, dockInput, dockStart, dockPosition = false, nil, nil, nil
+    listen(dockHandle.InputBegan, function(input)
+        if input.UserInputType == Enum.UserInputType.Touch
+            or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dockDragging = true
+            dockInput = input
+            dockStart = input.Position
+            dockPosition = mobileDock.Position
+        end
+    end)
+    listen(UIS.InputChanged, function(input)
+        if not dockDragging then return end
+        if input == dockInput or
+            (dockInput and dockInput.UserInputType == Enum.UserInputType.MouseButton1
+                and input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local delta = input.Position - dockStart
+            mobileDock.Position = UDim2.new(
+                dockPosition.X.Scale, dockPosition.X.Offset + delta.X,
+                dockPosition.Y.Scale, dockPosition.Y.Offset + delta.Y
+            )
+        end
+    end)
+    listen(UIS.InputEnded, function(input)
+        if input == dockInput or
+            (dockInput and dockInput.UserInputType == Enum.UserInputType.MouseButton1
+                and input.UserInputType == Enum.UserInputType.MouseButton1) then
+            dockDragging = false
+            dockInput = nil
+        end
+    end)
+end
 
 local function setVisual(track, knob, on)
     track.BackgroundColor3 = on and Theme.lime or Theme.off
@@ -518,8 +598,22 @@ end
 local function updateButtons()
     setVisual(aimTrack, aimKnob, AIM)
     setVisual(wallTrack, wallKnob, ESP)
-    aimTip.Text = AIM and "[E]  AIMBOT ENABLED" or "[E]  AIMBOT DISABLED"
+    if UIS.TouchEnabled then
+        aimTip.Text = AIM and "AIMBOT ENABLED" or "TAP TO ENABLE AIMBOT"
+    else
+        aimTip.Text = AIM and "[E]  AIMBOT ENABLED" or "[E]  AIMBOT DISABLED"
+    end
     aimTip.TextColor3 = AIM and Theme.lime or Theme.muted
+    if mobileAimButton then
+        mobileAimButton.Text = AIM and "AIMBOT ON" or "AIMBOT OFF"
+        mobileAimButton.BackgroundColor3 = AIM and Theme.lime or Theme.off
+        mobileAimButton.TextColor3 = AIM and Theme.dark or Theme.white
+    end
+    if mobileWallButton then
+        mobileWallButton.Text = ESP and "WALLHACK ON" or "WALLHACK OFF"
+        mobileWallButton.BackgroundColor3 = ESP and Theme.lime or Theme.off
+        mobileWallButton.TextColor3 = ESP and Theme.dark or Theme.white
+    end
 end
 local function toggleAim()
     AIM = not AIM
@@ -533,8 +627,16 @@ local function toggleWallhack()
 end
 listen(aimRow.Activated, toggleAim)
 listen(wallRow.Activated, toggleWallhack)
+if mobileAimButton then listen(mobileAimButton.Activated, toggleAim) end
+if mobileWallButton then listen(mobileWallButton.Activated, toggleWallhack) end
 
-local minimized = false
+-- Mobile starts with only the compact header visible; tap + to expand.
+local minimized = UIS.TouchEnabled
+if minimized then
+    body.Visible = false
+    main.Size = UDim2.fromOffset(286, 57)
+    minimize.Text = "+"
+end
 listen(minimize.Activated, function()
     minimized = not minimized
     body.Visible = not minimized
@@ -542,15 +644,13 @@ listen(minimize.Activated, function()
     minimize.Text = minimized and "+" or "-"
 end)
 
--- Keyboard shortcuts also work while the menu is hidden.
+-- PC keyboard shortcuts: E and V only; there is no Right Shift shortcut.
 listen(UIS.InputBegan, function(input, processed)
     if processed or UIS:GetFocusedTextBox() then return end
     if input.KeyCode == Enum.KeyCode.E then
         toggleAim()
     elseif input.KeyCode == Enum.KeyCode.V then
         toggleWallhack()
-    elseif input.KeyCode == Enum.KeyCode.RightShift then
-        main.Visible = not main.Visible
     end
 end)
 
@@ -609,4 +709,4 @@ env.ArsenalHubStop = stopHub
 
 updateButtons()
 refreshESP()
-print("[NeXLua Hub] Arsenal loaded | Press E to toggle Aimbot | Press V to toggle Wallhack")
+print("[NeXLua Hub] Arsenal PC + Mobile loaded | E: Aimbot | V: Wallhack | Mobile: on-screen buttons")
