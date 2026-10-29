@@ -262,13 +262,31 @@ local z = {
     "isL2fX1OLD1KAOH5w9S8jYuJa3haFloUAuf10dOXuYefZzQEND8SGOznjJedn7GpT0l/dQELUNeqjYaY9qKrWToAHCw3AqD3y9mr+caHenBFSSUnDxH0zpKnvZaCZnZK",
     "Uyp8HxvuzJPr2Q==",
 }
-local abc = table.concat(z)
-local raw = game:GetService("HttpService"):Base64Decode(abc)
-local out = table.create(#raw)
-for i = 1, #raw do
-    out[i] = string.char(bit32.bxor(string.byte(raw, i), (73 + i * 17) % 256))
+-- Decodificador Base64 en Lua: compatible con executors sin HttpService.Base64Decode.
+local abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local map = {}
+for i = 1, #abc do
+    map[abc:sub(i, i)] = i - 1
 end
-local src = table.concat(out)
-local fn, err = loadstring(src)
+local out, total, acc, bits = {}, 0, 0, 0
+for _, block in ipairs(z) do
+    for i = 1, #block do
+        local n = map[block:sub(i, i)]
+        if n ~= nil then
+            acc = acc * 64 + n
+            bits = bits + 6
+            if bits >= 8 then
+                bits = bits - 8
+                local byte = math.floor(acc / (2 ^ bits))
+                acc = acc % (2 ^ bits)
+                total = total + 1
+                out[total] = string.char(bit32.bxor(byte, (73 + total * 17) % 256))
+            end
+        end
+    end
+end
+local compiler = loadstring or load
+if type(compiler) ~= "function" then error("Executor no compatible con loadstring") end
+local fn, err = compiler(table.concat(out))
 if not fn then error(err) end
 return fn()
